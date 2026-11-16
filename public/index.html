@@ -23,7 +23,7 @@
   <section id="view-shop" class="view">
     <div class="hero">
       <h1>Robin Dark <span>— Aquí puedes vender de todo</span></h1>
-      <p class="welcome">Bienvenido a Robin Dark, el mercado abierto donde cualquiera puede publicar y comprar. Entra solo con un alias, sin correo, sin teléfono y sin ubicación. Los pagos son solo en BTC y todo queda guardado: cuentas, anuncios, pedidos y mensajes.</p>
+      <p class="welcome">Bienvenido a Robin Dark, el mercado abierto donde cualquiera puede publicar y negociar. Entra solo con un alias, sin correo, sin teléfono y sin ubicación. Los pagos son solo en BTC y todo queda guardado: cuentas, anuncios, pedidos y mensajes. Para comprar, contacta al vendedor en el chat y negocien el trato ahí: el chat no vende solo, y el pago queda en custodia hasta que el comprador confirme que recibió el producto.</p>
       <div class="search-box">
         <input id="search-input" type="search" placeholder="Busca lo que sea…" aria-label="Buscar en la tienda">
         <button id="search-btn">Buscar</button>
@@ -60,6 +60,11 @@
     <div class="chat-layout">
       <div id="conv-list" class="conv-list"></div>
       <div class="chat-panel">
+        <div id="chat-escrow" class="msg" hidden></div>
+        <div id="chat-actions" class="row" hidden>
+          <button id="mark-sold-chat-btn" class="cta" hidden>Marcar como vendido</button>
+          <button id="confirm-chat-btn" class="cta" hidden>Confirmar que recibí el producto</button>
+        </div>
         <div id="chat-messages" class="chat-messages"><p class="muted">Elige una conversación para hablar con el vendedor o el comprador.</p></div>
         <form id="chat-form" class="chat-form" hidden>
           <input id="chat-input" maxlength="2000" placeholder="Escribe tu mensaje…" autocomplete="off">
