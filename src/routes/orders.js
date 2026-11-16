@@ -107,7 +107,10 @@ async function markSold(req, res) {
       return res.status(400).json({ error: 'Primero habla con ese comprador en el chat de este anuncio.' });
     }
 
-    const existing = await db.get('SELECT * FROM orders WHERE listing_id = $1', [listing.id]);
+    // Un pedido CANCELADO (por ejemplo, por el admin al cancelar una
+    // custodia) no bloquea volver a cerrar el trato: solo bloquean
+    // los pedidos activos (retenido/liberado).
+    const existing = await db.get("SELECT * FROM orders WHERE listing_id = $1 AND status != 'cancelado'", [listing.id]);
     if (existing) return res.status(409).json({ error: 'Ese anuncio ya tiene un pedido.' });
 
     // Pedido en custodia: el pago queda RETENIDO hasta que el comprador
