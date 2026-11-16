@@ -54,7 +54,8 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/chat/:id/messages
+// GET /api/chat/:id/messages — mensajes + estado del anuncio y de la
+// custodia (escrow) de ese trato, para mostrarlos en el chat.
 router.get('/:id/messages', requireAuth, async (req, res) => {
   try {
     const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [req.params.id]);
@@ -62,13 +63,25 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     if (conv.buyer_id !== req.user.id && conv.seller_id !== req.user.id) {
       return res.status(403).json({ error: 'Este chat no es tuyo.' });
     }
+    const listing = await db.get('SELECT id, title, status, price_sats FROM listings WHERE id = $1', [conv.listing_id]);
+    const order = await db.get(
+      'SELECT * FROM orders WHERE listing_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [conv.listing_id],
+    );
     const r = await db.query(
       `SELECT m.*, u.alias AS sender_alias FROM messages m
        JOIN users u ON u.id = m.sender_id
        WHERE m.conversation_id = $1 ORDER BY m.created_at ASC, m.id ASC`,
       [conv.id],
     );
-    return res.json({ conversation: conv, messages: r.rows });
+    return res.json({
+      conversation: conv,
+      listing: listing ? { id: listing.id, title: listing.title, status: listing.status, price_sats: Number(listing.price_sats) } : null,
+      // Custodia: null si aún no hay pedido; si lo hay, su estado
+      // (retenido / liberado) se muestra en el chat.
+      order: order ? { id: order.id, status: order.status, buyer_id: order.buyer_id, seller_id: order.seller_id, price_sats: Number(order.price_sats) } : null,
+      messages: r.rows,
+    });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo cargar los mensajes.' });
@@ -76,6 +89,9 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
 });
 
 // POST /api/chat/:id/messages { body }
+// SOLO envía un mensaje. Nunca crea un pedido, nunca marca el anuncio
+// como vendido y nunca muestra "compra exitosa": el chat es solo para
+// contactar al vendedor y negociar el trato.
 router.post('/:id/messages', requireAuth, async (req, res) => {
   try {
     const body = String(req.body.body || '').trim().slice(0, 2000);
