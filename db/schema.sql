@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS orders (
   buyer_id INTEGER NOT NULL REFERENCES users(id),
   seller_id INTEGER NOT NULL REFERENCES users(id),
   price_sats BIGINT NOT NULL CHECK (price_sats > 0),
-  status TEXT NOT NULL DEFAULT 'pagado_btc' CHECK (status IN ('pagado_btc', 'completado', 'cancelado')),
+  status TEXT NOT NULL DEFAULT 'retenido' CHECK (status IN ('retenido', 'liberado', 'pagado_btc', 'completado', 'cancelado')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
