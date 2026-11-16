@@ -15,8 +15,8 @@ function checkPassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-function signToken(user) {
-  return jwt.sign({ id: user.id, alias: user.alias }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+function signToken(user, extra = {}) {
+  return jwt.sign({ id: user.id, alias: user.alias, ...extra }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 }
 
 function verifyToken(token) {
