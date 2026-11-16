@@ -7,9 +7,10 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 - **Registro e inicio de sesión anónimos:** solo alias + contraseña. Sin correo, sin teléfono y sin ubicación. Las contraseñas se guardan cifradas con bcrypt. No se guarda ni se muestra la ubicación de nadie.
 - **Tienda con buscador:** la búsqueda es la forma de encontrar artículos. No hay filtros ni botones de categorías en ningún lado.
 - **Publicar anuncios:** título, descripción y precio en BTC.
-- **Compra directa:** al comprar, el anuncio pasa a vendido, se crea el pedido y se abre el chat con el vendedor.
-- **Mi cuenta:** mis anuncios, mis compras y mis ventas.
-- **Chat privado:** solo entre comprador y vendedor, por anuncio.
+- **Chat privado:** solo entre comprador y vendedor, por anuncio. El chat es solo para contactar y negociar: enviar un mensaje nunca crea un pedido, nunca marca el anuncio como vendido y nunca muestra "compra exitosa".
+- **Marcar como vendido (solo el vendedor):** cuando el trato se cierra en el chat, el vendedor marca su anuncio como vendido (en Mi cuenta o en el chat). Eso crea el pedido y el anuncio deja de verse en la tienda.
+- **Custodia (escrow) en BTC:** al marcar como vendido, el pago queda RETENIDO en custodia (estado: `retenido`). Solo el COMPRADOR puede liberarlo, con el botón "Confirmar que recibí el producto" (en Mi cuenta o en el chat), y solo entonces el pago pasa a `liberado` para el vendedor. El vendedor NO puede liberar el pago él mismo. El estado de custodia se ve en el pedido, en Mi cuenta (comprador y vendedor) y en el chat.
+- **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
 - **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
 - **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
 
@@ -32,8 +33,8 @@ robin-dark-js/
 │   └── routes/
 │       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
 │       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar)
-│       ├── orders.js       # POST /api/orders (Comprar con BTC) · GET /api/orders/account
-│       └── chat.js         # GET/POST /api/chat y /api/chat/:id/messages
+│       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
+│       └── chat.js         # GET/POST /api/chat y /api/chat/:id/messages (enviar un mensaje nunca vende)
 └── public/
     ├── index.html          # interfaz
     ├── app.js              # lógica del navegador (fetch a la API)
@@ -46,7 +47,7 @@ robin-dark-js/
 |---|---|
 | `users` | alias, contraseña cifrada, fecha de creación |
 | `listings` | vendedor, título, descripción, `price_sats`, estado (disponible/vendido) |
-| `orders` | anuncio, comprador, vendedor, `price_sats`, estado (`pagado_btc`, …) |
+| `orders` | anuncio, comprador, vendedor, `price_sats`, estado de custodia (`retenido` → `liberado`; `pagado_btc`/`completado` son estados antiguos) |
 | `conversations` | anuncio, comprador, vendedor (única por los tres) |
 | `messages` | conversación, remitente, texto |
 
