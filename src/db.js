@@ -51,7 +51,7 @@ async function init() {
         buyer_id INTEGER NOT NULL REFERENCES users(id),
         seller_id INTEGER NOT NULL REFERENCES users(id),
         price_sats BIGINT NOT NULL CHECK (price_sats > 0),
-        status TEXT NOT NULL DEFAULT 'pagado_btc' CHECK (status IN ('pagado_btc', 'completado', 'cancelado')),
+        status TEXT NOT NULL DEFAULT 'retenido' CHECK (status IN ('retenido', 'liberado', 'pagado_btc', 'completado', 'cancelado')),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS conversations (
@@ -73,6 +73,14 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, created_at ASC);
+    `);
+    // Migración custodia: las bases ya creadas (Railway) tienen el CHECK
+    // antiguo de orders.status. Se amplía sin borrar pedidos viejos
+    // ('pagado_btc' se conserva como estado antiguo válido).
+    await pool.query(`
+      ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+      ALTER TABLE orders ADD CONSTRAINT orders_status_check
+        CHECK (status IN ('retenido', 'liberado', 'pagado_btc', 'completado', 'cancelado'));
     `);
     console.log('[db] Postgres conectado (DATABASE_URL)');
   } else {
@@ -103,7 +111,7 @@ async function init() {
         buyer_id INTEGER NOT NULL REFERENCES users(id),
         seller_id INTEGER NOT NULL REFERENCES users(id),
         price_sats INTEGER NOT NULL CHECK (price_sats > 0),
-        status TEXT NOT NULL DEFAULT 'pagado_btc' CHECK (status IN ('pagado_btc', 'completado', 'cancelado')),
+        status TEXT NOT NULL DEFAULT 'retenido' CHECK (status IN ('retenido', 'liberado', 'pagado_btc', 'completado', 'cancelado')),
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS conversations (
