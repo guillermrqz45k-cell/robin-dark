@@ -20,6 +20,8 @@ app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/listings', require('./src/routes/listings'));
 app.use('/api/orders', require('./src/routes/orders'));
 app.use('/api/chat', require('./src/routes/chat'));
+app.use('/api/stats', require('./src/routes/stats'));
+app.use('/api/admin', require('./src/routes/admin'));
 
 // Cualquier ruta no API sirve la app.
 app.get('*', (req, res) => {

@@ -10,6 +10,8 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 - **Chat privado:** solo entre comprador y vendedor, por anuncio. El chat es solo para contactar y negociar: enviar un mensaje nunca crea un pedido, nunca marca el anuncio como vendido y nunca muestra "compra exitosa".
 - **Marcar como vendido (solo el vendedor):** cuando el trato se cierra en el chat, el vendedor marca su anuncio como vendido (en Mi cuenta o en el chat). Eso crea el pedido y el anuncio deja de verse en la tienda.
 - **Custodia (escrow) en BTC:** al marcar como vendido, el pago queda RETENIDO en custodia (estado: `retenido`). Solo el COMPRADOR puede liberarlo, con el botón "Confirmar que recibí el producto" (en Mi cuenta o en el chat), y solo entonces el pago pasa a `liberado` para el vendedor. El vendedor NO puede liberar el pago él mismo. El estado de custodia se ve en el pedido, en Mi cuenta (comprador y vendedor) y en el chat.
+- **Estadísticas públicas:** en la portada se ven los conteos en vivo de la base de datos — usuarios registrados, anuncios publicados, tratos cerrados y mensajes enviados — desde el endpoint público `GET /api/stats`, que devuelve solo números, ningún dato personal.
+- **Panel de administrador:** botón "Admin" en la barra superior. Entra solo el dueño del sitio, con alias y contraseña aparte de los usuarios anónimos (variables `ADMIN_ALIAS` y `ADMIN_PASSWORD`); sin esas variables, el login de admin no funciona, porque no hay ninguna contraseña por defecto en el código. El panel muestra los conteos, todos los usuarios (alias y fecha, nunca contraseñas), todos los anuncios, todos los pedidos y todas las custodias con su estado. El admin puede borrar un anuncio sin pedidos y cancelar una custodia retenida (el pedido pasa a cancelado y el anuncio vuelve a estar disponible). Los usuarios normales reciben 403 en `/api/admin/*`.
 - **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
 - **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
 - **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
@@ -29,16 +31,18 @@ robin-dark-js/
 │   ├── db.js               # Postgres (DATABASE_URL) o SQLite local (node:sqlite)
 │   ├── auth.js             # hash bcrypt + JWT
 │   ├── middleware/
-│   │   └── auth.js         # requireAuth (Bearer JWT)
+│   │   └── auth.js         # requireAuth (Bearer JWT) y requireAdmin (JWT con role: 'admin')
 │   └── routes/
+│       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
 │       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
 │       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar)
 │       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
+│       ├── stats.js        # GET /api/stats (conteos públicos: usuarios, anuncios, tratos cerrados, mensajes)
 │       └── chat.js         # GET/POST /api/chat y /api/chat/:id/messages (enviar un mensaje nunca vende)
 └── public/
     ├── index.html          # interfaz
     ├── app.js              # lógica del navegador (fetch a la API)
-    └── styles.css          # diseño negro + verde esmeralda + dorado
+    └── styles.css          # diseño negro + dorado 3D
 ```
 
 ### Tablas (base de datos)
@@ -99,6 +103,8 @@ Railway corre la app y la base de datos juntas, sin que la página se duerma. Pr
 3. **Añade Postgres:** en el lienzo del proyecto, *New → Database → Add PostgreSQL*. Railway crea `DATABASE_URL` automáticamente y se la pasa a la app.
 4. **Variables:** en el servicio web, *Variables*, añade:
    - `JWT_SECRET` = una cadena larga y secreta (cámbiala, no uses la de ejemplo)
+   - `ADMIN_ALIAS` = tu alias de administrador (por ejemplo `admin`)
+   - `ADMIN_PASSWORD` = una contraseña larga y secreta, solo para el panel de administrador. Sin estas dos variables, el panel no deja entrar a nadie.
    - `DATABASE_URL` ya la pone Railway al añadir Postgres; si no aparece, usa *Reference* → la variable `DATABASE_URL` del servicio Postgres.
    - Opcional: `PGSSL=false` solo si tu Postgres no usa SSL (en Railway no hace falta).
 5. **Despliega:** Railway detecta `railway.json` y arranca con `node server.js`. El healthcheck es `GET /api/health`.
@@ -108,7 +114,20 @@ Railway corre la app y la base de datos juntas, sin que la página se duerma. Pr
 
 ## Seguridad y privacidad
 
+### Probar el panel de administrador en local
+
+```bash
+# En .env (nunca se sube a GitHub), añade:
+ADMIN_ALIAS=admin
+ADMIN_PASSWORD=una-contrasena-larga-y-secreta
+JWT_SECRET=otra-clave-larga-y-secreta
+npm start
+# Abre http://localhost:3000, pulsa "Admin" y entra con ese alias y contraseña.
+# Sin ADMIN_ALIAS y ADMIN_PASSWORD, el login de admin responde 503.
+```
+
 - Contraseñas con bcrypt (hash + sal, 12 rondas); nunca se guardan en claro.
 - Sesión con JWT (30 días) en el encabezado `Authorization: Bearer`.
+- El panel de admin usa un JWT aparte con `role: 'admin'`; las credenciales de admin viven solo en variables de entorno y no hay ninguna contraseña por defecto en el código.
 - No hay geolocalización, ni correo, ni teléfono, ni IP guardada en la base de datos.
 - En producción, pon un `JWT_SECRET` largo y distinto, y usa HTTPS (Railway lo da con su dominio).
