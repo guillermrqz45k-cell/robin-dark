@@ -14,6 +14,7 @@
     <button data-view="sell" class="nav-btn">Vender</button>
     <button data-view="account" class="nav-btn">Mi cuenta</button>
     <button data-view="chat" class="nav-btn">Mensajes <span id="chat-badge" class="badge" hidden></span></button>
+    <button data-view="admin" class="nav-btn">Admin</button>
   </nav>
   <div id="auth-area" class="auth-area"></div>
 </header>
@@ -24,6 +25,12 @@
     <div class="hero">
       <h1>Robin Dark <span>— Aquí puedes vender de todo</span></h1>
       <p class="welcome">Bienvenido a Robin Dark, el mercado abierto donde cualquiera puede publicar y negociar. Entra solo con un alias, sin correo, sin teléfono y sin ubicación. Los pagos son solo en BTC y todo queda guardado: cuentas, anuncios, pedidos y mensajes. Para comprar, contacta al vendedor en el chat y negocien el trato ahí: el chat no vende solo, y el pago queda en custodia hasta que el comprador confirme que recibió el producto.</p>
+      <div class="stats" id="stats" aria-label="Estadísticas del mercado">
+        <div class="stat"><strong id="stat-users">0</strong><span>usuarios registrados</span></div>
+        <div class="stat"><strong id="stat-listings">0</strong><span>anuncios publicados</span></div>
+        <div class="stat"><strong id="stat-deals">0</strong><span>tratos cerrados</span></div>
+        <div class="stat"><strong id="stat-messages">0</strong><span>mensajes enviados</span></div>
+      </div>
       <div class="search-box">
         <input id="search-input" type="search" placeholder="Busca lo que sea…" aria-label="Buscar en la tienda">
         <button id="search-btn">Buscar</button>
@@ -72,6 +79,13 @@
         </form>
       </div>
     </div>
+  </section>
+
+  <!-- Panel de administrador -->
+  <section id="view-admin" class="view" hidden>
+    <h2>Panel de administrador</h2>
+    <p class="muted">Solo el dueño del sitio entra aquí, con su alias y contraseña de administrador (variables ADMIN_ALIAS y ADMIN_PASSWORD). Los usuarios normales no pueden ver estos datos.</p>
+    <div id="admin-content"><p class="muted">Cargando el panel…</p></div>
   </section>
 
   <!-- Acceso anónimo -->

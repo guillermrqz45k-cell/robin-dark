@@ -38,6 +38,7 @@ function showView(name) {
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'account') loadAccount();
   if (name === 'chat') loadConversations();
+  if (name === 'admin') loadAdmin();
 }
 
 document.querySelectorAll('.nav-btn').forEach((b) => {
@@ -59,6 +60,21 @@ function renderAuthArea() {
     area.innerHTML = `<button id="enter-btn" class="cta">Entrar / Crear cuenta</button>`;
     $('#enter-btn').addEventListener('click', () => showView('auth'));
   }
+}
+
+// ---- Estadísticas públicas ----
+// Solo números desde /api/stats: cuántos usuarios se registraron,
+// cuántos anuncios se publicaron, cuántos tratos se cerraron y
+// cuántos mensajes se enviaron. Ningún dato personal.
+async function loadStats() {
+  try {
+    const s = await api.call('/api/stats');
+    const set = (id, v) => { const el = $(id); if (el) el.textContent = Number(v ?? 0).toLocaleString('es'); };
+    set('#stat-users', s.users);
+    set('#stat-listings', s.listings);
+    set('#stat-deals', s.tratos_cerrados);
+    set('#stat-messages', s.messages);
+  } catch (e) { /* las estadísticas no bloquean la tienda */ }
 }
 
 // ---- Tienda ----
@@ -116,7 +132,7 @@ $('#sell-form').addEventListener('submit', async (ev) => {
     });
     msg.textContent = `Publicado: ${data.listing.title} por ${data.listing.price_display}.`;
     msg.className = 'msg ok';
-    ev.target.reset(); loadListings();
+    ev.target.reset(); loadListings(); loadStats();
   } catch (e) { msg.textContent = e.message; msg.className = 'msg error'; }
 });
 
@@ -172,7 +188,7 @@ async function markSold(listingId, buyer) {
   try {
     const data = await api.call('/api/orders/mark-sold', { method: 'POST', body: JSON.stringify(body) });
     alert(`Anuncio marcado como vendido. Pago retenido en custodia: ${data.order.price_display}. Se libera cuando el comprador confirme que recibió el producto.`);
-    loadAccount(); loadListings(); if (currentConv) loadMessages(currentConv);
+    loadAccount(); loadListings(); loadStats(); if (currentConv) loadMessages(currentConv);
   } catch (e) { alert(e.message); }
 }
 
@@ -182,7 +198,7 @@ async function confirmReceipt(orderId) {
   try {
     const data = await api.call(`/api/orders/${orderId}/confirm-receipt`, { method: 'POST', body: JSON.stringify({}) });
     alert(`Pago liberado al vendedor: ${data.order.price_display}.`);
-    loadAccount(); if (currentConv) loadMessages(currentConv);
+    loadAccount(); loadStats(); if (currentConv) loadMessages(currentConv);
   } catch (e) { alert(e.message); }
 }
 
@@ -268,15 +284,198 @@ async function authSubmit(form, path, msgEl) {
     const data = await api.call(path, { method: 'POST', body: JSON.stringify({ alias: fd.get('alias'), password: fd.get('password') }) });
     api.saveAuth(data); renderAuthArea();
     msgEl.textContent = `Bienvenido, ${data.user.alias}.`; msgEl.className = 'msg ok';
+    loadStats();
     showView('shop'); loadListings();
   } catch (e) { msgEl.textContent = e.message; msgEl.className = 'msg error'; }
 }
 $('#register-form').addEventListener('submit', (ev) => { ev.preventDefault(); authSubmit(ev.target, '/api/auth/register', ev.target.querySelector('[data-msg]')); });
 $('#login-form').addEventListener('submit', (ev) => { ev.preventDefault(); authSubmit(ev.target, '/api/auth/login', ev.target.querySelector('[data-msg]')); });
 
+// ---- Panel de administrador ----
+// Sesión de admin SEPARADA de la del usuario normal: se guarda en
+// rd_admin_token y usa /api/admin/* con JWT role: 'admin'. Las
+// credenciales son ADMIN_ALIAS / ADMIN_PASSWORD de las variables
+// de entorno; no hay contraseña por defecto en el código.
+const adminApi = {
+  token: localStorage.getItem('rd_admin_token') || null,
+  user: JSON.parse(localStorage.getItem('rd_admin_user') || 'null'),
+  async call(path, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) headers.Authorization = 'Bearer ' + this.token;
+    const res = await fetch(path, { ...opts, headers });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Algo salió mal.');
+    return data;
+  },
+  saveAuth({ token, user }) {
+    this.token = token; this.user = user;
+    localStorage.setItem('rd_admin_token', token);
+    localStorage.setItem('rd_admin_user', JSON.stringify(user));
+  },
+  logout() {
+    this.token = null; this.user = null;
+    localStorage.removeItem('rd_admin_token');
+    localStorage.removeItem('rd_admin_user');
+  },
+};
+
+let adminTab = 'resumen';
+
+function adminLoginHtml(msg = '') {
+  return `<form id="admin-login-form" class="card form">
+    <h3>Entrar como administrador</h3>
+    <p class="muted small">Solo el dueño del sitio. Usa el alias y la contraseña de ADMIN_ALIAS y ADMIN_PASSWORD de las variables de entorno.</p>
+    <label>Alias de admin <input name="alias" required placeholder="admin"></label>
+    <label>Contraseña de admin <input name="password" type="password" required></label>
+    <button type="submit">Entrar al panel</button>
+    <p class="msg ${msg ? 'error' : ''}">${esc(msg)}</p>
+  </form>`;
+}
+
+function adminTabsHtml() {
+  const tabs = [['resumen', 'Resumen'], ['usuarios', 'Usuarios'], ['anuncios', 'Anuncios'], ['pedidos', 'Pedidos'], ['custodia', 'Custodia']];
+  return `<div class="row">
+    <span class="who">◆ Admin: ${esc(adminApi.user?.alias || '')}</span>
+    <button id="admin-logout-btn" class="ghost">Salir del panel</button>
+  </div>
+  <div class="row" style="margin-top:16px">
+    ${tabs.map(([k, label]) => `<button class="nav-btn admin-tab ${adminTab === k ? 'active' : ''}" data-tab="${k}">${label}</button>`).join('')}
+  </div>
+  <div id="admin-tab-content" style="margin-top:16px"><p class="muted">Cargando…</p></div>`;
+}
+
+function adminTable(headers, rows) {
+  if (!rows.length) return '<p class="muted">No hay registros todavía.</p>';
+  return `<div class="table-wrap"><table class="admin-table">
+    <thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+async function loadAdmin(msg = '') {
+  const el = $('#admin-content');
+  if (!el) return;
+  if (!adminApi.token) {
+    el.innerHTML = adminLoginHtml(msg);
+    $('#admin-login-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      try {
+        const data = await adminApi.call('/api/admin/login', {
+          method: 'POST',
+          body: JSON.stringify({ alias: fd.get('alias'), password: fd.get('password') }),
+        });
+        adminApi.saveAuth(data);
+        adminTab = 'resumen';
+        loadAdmin();
+      } catch (e) { loadAdmin(e.message); }
+    });
+    return;
+  }
+  el.innerHTML = adminTabsHtml();
+  $('#admin-logout-btn').addEventListener('click', () => { adminApi.logout(); loadAdmin(); });
+  el.querySelectorAll('.admin-tab').forEach((b) => b.addEventListener('click', () => {
+    adminTab = b.dataset.tab;
+    loadAdminTab();
+  }));
+  await loadAdminTab();
+}
+
+async function loadAdminTab() {
+  const content = $('#admin-tab-content');
+  if (!content) return;
+  content.innerHTML = '<p class="muted">Cargando…</p>';
+  try {
+    if (adminTab === 'resumen') {
+      const s = await adminApi.call('/api/admin/stats');
+      content.innerHTML = `
+        <div class="stats">
+          <div class="stat"><strong>${Number(s.users).toLocaleString('es')}</strong><span>usuarios registrados</span></div>
+          <div class="stat"><strong>${Number(s.listings).toLocaleString('es')}</strong><span>anuncios publicados</span></div>
+          <div class="stat"><strong>${Number(s.orders).toLocaleString('es')}</strong><span>pedidos</span></div>
+          <div class="stat"><strong>${Number(s.tratos_cerrados).toLocaleString('es')}</strong><span>tratos cerrados</span></div>
+          <div class="stat"><strong>${Number(s.messages).toLocaleString('es')}</strong><span>mensajes enviados</span></div>
+          <div class="stat"><strong>${Number(s.conversations).toLocaleString('es')}</strong><span>conversaciones</span></div>
+        </div>
+        <div class="card small" style="margin-top:16px">
+          <h3>Custodia (escrow) en BTC</h3>
+          <p>Retenido: <strong class="price">${Number(s.escrows.retenido)} pedido(s) · ₿ ${esc(s.escrows.retenido_btc)}</strong></p>
+          <p>Liberado: <strong>${Number(s.escrows.liberado)} pedido(s) · ₿ ${esc(s.escrows.liberado_btc)}</strong></p>
+          <p>Cancelado: <strong>${Number(s.escrows.cancelado)} pedido(s)</strong></p>
+          <p class="muted small">Anuncios disponibles: ${Number(s.listings_disponible)} · Vendidos: ${Number(s.listings_vendido)}</p>
+        </div>`;
+    } else if (adminTab === 'usuarios') {
+      const d = await adminApi.call('/api/admin/users');
+      content.innerHTML = adminTable(
+        ['#', 'Alias', 'Registrado', 'Anuncios', 'Pedidos'],
+        d.users.map((u) => [u.id, `<strong>${esc(u.alias)}</strong>`, esc(u.created_at), u.listings_count, u.orders_count]),
+      );
+    } else if (adminTab === 'anuncios') {
+      const d = await adminApi.call('/api/admin/listings');
+      content.innerHTML = adminTable(
+        ['#', 'Título', 'Vendedor', 'Precio', 'Estado', 'Publicado', 'Acción'],
+        d.listings.map((l) => [
+          l.id, `<strong>${esc(l.title)}</strong><br><span class="muted small">${esc(l.description || '')}</span>`,
+          esc(l.seller_alias), esc(l.price_display), esc(l.status), esc(l.created_at),
+          `<button class="ghost admin-delete-listing" data-id="${l.id}">Borrar</button>`,
+        ]),
+      );
+    } else if (adminTab === 'pedidos') {
+      const d = await adminApi.call('/api/admin/orders');
+      content.innerHTML = adminTable(
+        ['#', 'Anuncio', 'Comprador', 'Vendedor', 'Precio', 'Estado', 'Fecha'],
+        d.orders.map((o) => [
+          o.id, `<strong>${esc(o.listing_title)}</strong>`, esc(o.buyer_alias), esc(o.seller_alias),
+          esc(o.price_display), esc(o.status), esc(o.created_at),
+        ]),
+      );
+    } else if (adminTab === 'custodia') {
+      const d = await adminApi.call('/api/admin/escrows');
+      content.innerHTML = adminTable(
+        ['#', 'Anuncio', 'Comprador → Vendedor', 'Importe', 'Custodia', 'Acción'],
+        d.escrows.map((o) => [
+          o.id, `<strong>${esc(o.listing_title)}</strong>`, `${esc(o.buyer_alias)} → ${esc(o.seller_alias)}`,
+          esc(o.price_display), `<span class="muted small">${esc(o.escrow_label)}</span>`,
+          o.status === 'retenido'
+            ? `<button class="ghost admin-cancel-escrow" data-id="${o.id}">Cancelar custodia</button>`
+            : '<span class="muted small">—</span>',
+        ]),
+      ) + '<p class="muted small">Cancelar una custodia retenida devuelve el anuncio a disponible. Una custodia liberada ya no se puede cancelar.</p>';
+    }
+  } catch (e) {
+    if (/401|403|Sesión/.test(e.message) || e.message.includes('administrador')) {
+      adminApi.logout();
+      loadAdmin(e.message);
+      return;
+    }
+    content.innerHTML = `<p class="msg error">${esc(e.message)}</p>`;
+  }
+}
+
+$('#admin-content').addEventListener('click', async (ev) => {
+  const del = ev.target.closest('.admin-delete-listing');
+  if (del) {
+    if (!confirm('¿Borrar este anuncio? Solo se puede si no tiene pedidos.')) return;
+    try {
+      await adminApi.call(`/api/admin/listings/${del.dataset.id}`, { method: 'DELETE' });
+      loadAdminTab(); loadStats(); loadListings();
+    } catch (e) { alert(e.message); }
+    return;
+  }
+  const cancel = ev.target.closest('.admin-cancel-escrow');
+  if (cancel) {
+    if (!confirm('¿Cancelar esta custodia retenida? El anuncio vuelve a estar disponible.')) return;
+    try {
+      await adminApi.call(`/api/admin/escrows/${cancel.dataset.id}/cancel`, { method: 'POST', body: JSON.stringify({}) });
+      loadAdminTab(); loadStats(); loadListings();
+    } catch (e) { alert(e.message); }
+  }
+});
+
 // Modal (detalle rápido, sin categorías)
 $('#modal-close').addEventListener('click', () => { $('#modal').hidden = true; });
 $('#modal').addEventListener('click', (ev) => { if (ev.target.id === 'modal') $('#modal').hidden = true; });
 
 renderAuthArea();
+loadStats();
 loadListings();
