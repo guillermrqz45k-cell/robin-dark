@@ -72,16 +72,25 @@ async function fetchOrder(id) {
 // POST /api/orders/mark-sold { listing_id, buyer_id | buyer_alias, confirm: true }
 // SOLO EL VENDEDOR, y solo después de cerrar el trato en el chat.
 // Crea el pedido con el pago RETENIDO en custodia (estado: retenido)
-// y marca el anuncio como vendido. Requiere confirmación explícita.
+// y DESCUENTA 1 unidad del stock.
+//
+// STOCK (no una sola venta por anuncio):
+// - Un anuncio con stock 3 se vende 3 veces: cada mark-sold crea
+//   un pedido y descuenta 1. El anuncio sigue 'disponible' mientras
+//   stock > 0 y solo pasa a 'agotado' cuando stock llega a 0.
+// - La única otra forma de que se acabe es que el vendedor lo dé
+//   por agotado (POST /api/listings/:id/mark-out-of-stock).
+// - 'vendido' es un estado antiguo: las filas viejas lo conservan,
+//   pero el flujo nuevo ya no lo usa.
 //
 // Correcciones de seguridad (carreras / TOCTOU):
-// - Antes se leía el estado del anuncio, se comprobaba y LUEGO se
-//   actualizaba: dos peticiones a la vez podían pasar la comprobación
-//   y crear dos pedidos del mismo anuncio. Ahora el cambio de estado
-//   es ATÓMICO: UPDATE ... WHERE status='disponible' y solo sigue
-//   si realmente cambió 1 fila. Además hay un índice único parcial
-//   en orders(listing_id) para pedidos no cancelados (ver src/db.js),
-//   así que la base de datos tampoco deja duplicar el pedido.
+// - El descuento es ATÓMICO: UPDATE ... SET stock = stock - 1
+//   WHERE status='disponible' AND stock > 0 RETURNING stock, y
+//   solo se sigue si realmente cambió 1 fila. Dos ventas a la vez
+//   de la última unidad: una gana (201) y la otra recibe 409, sin
+//   crear un segundo pedido ni dejar el stock en negativo. El
+//   índice único de un pedido por anuncio se eliminó (ver src/db.js):
+//   ya no es la defensa, lo es este decremento atómico.
 // - Antes bastaba con haber abierto el chat (clic en "Contactar"):
 //   el trato se podía cerrar sin haber negociado nada. Ahora se
 //   exige al menos UN mensaje en esa conversación.
@@ -98,6 +107,9 @@ async function markSold(req, res) {
     // Solo el vendedor de este anuncio puede marcarlo como vendido.
     if (listing.seller_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo el vendedor de este anuncio puede marcarlo como vendido.' });
+    }
+    if (listing.status === 'agotado' || listing.status === 'vendido') {
+      return res.status(409).json({ error: 'Ese artículo ya está agotado.' });
     }
 
     // ¿Con qué comprador se cerró el trato? Por id o por alias.
@@ -127,22 +139,24 @@ async function markSold(req, res) {
       return res.status(400).json({ error: 'Primero negocia el trato en el chat: tiene que haber al menos un mensaje.' });
     }
 
-    // Cambio de estado ATÓMICO: solo el primer intento que lo
-    // encuentra 'disponible' lo marca vendido. Si otro intento
-    // llegó antes (o el anuncio ya estaba vendido), rowCount es 0
-    // y se rechaza con 409, sin crear un segundo pedido.
+    // Descuento de stock ATÓMICO: solo el intento que encuentra
+    // stock > 0 descuenta 1 unidad. Si otro intento vendió la
+    // última unidad antes (o el anuncio ya estaba agotado),
+    // rowCount es 0 y se rechaza con 409, sin crear pedido.
     const claimed = await db.query(
-      "UPDATE listings SET status = 'vendido' WHERE id = $1 AND status = 'disponible'",
+      "UPDATE listings SET stock = stock - 1 WHERE id = $1 AND status = 'disponible' AND stock > 0 RETURNING stock",
       [listing.id],
     );
     if (!claimed.rowCount) {
-      return res.status(409).json({ error: 'Ese anuncio ya está vendido.' });
+      return res.status(409).json({ error: 'Ese artículo ya está agotado.' });
+    }
+    const remainingStock = Number(claimed.rows[0].stock);
+    // Si era la última unidad, el anuncio se agota: deja de verse
+    // en la tienda. Si quedan unidades, sigue disponible.
+    if (remainingStock === 0) {
+      await db.query("UPDATE listings SET status = 'agotado' WHERE id = $1", [listing.id]);
     }
 
-    // Un pedido CANCELADO (por ejemplo, por el admin al cancelar una
-    // custodia) no bloquea volver a cerrar el trato: solo bloquean
-    // los pedidos activos (retenido/liberado). El índice único
-    // parcial de la base de datos refuerza esta regla.
     let created;
     try {
       created = await db.query(
@@ -151,21 +165,34 @@ async function markSold(req, res) {
         [listing.id, buyer.id, listing.seller_id, listing.price_sats],
       );
     } catch (e) {
-      // Si el índice único rechazó el duplicado (carrera ganada por
-      // otro intento), el anuncio ya quedó vendido: no hay pedido
-      // nuevo y no se devuelve un error 500.
-      if (/unique|UNIQUE/i.test(e.message || '')) {
-        return res.status(409).json({ error: 'Ese anuncio ya tiene un pedido.' });
-      }
+      // Si no se pudo crear el pedido, se devuelve la unidad al
+      // stock para no perderla (el anuncio vuelve a disponible
+      // si se había agotado por esta venta).
+      await db.query(
+        "UPDATE listings SET stock = stock + 1, status = 'disponible' WHERE id = $1",
+        [listing.id],
+      );
       throw e;
     }
     await db.query(
       'INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)',
-      [conv.id, req.user.id, `Trato cerrado. Vendido por ₿ ${formatBtc(listing.price_sats)}. El pago queda retenido en custodia hasta que el comprador confirme que recibió el producto.`],
+      [conv.id, req.user.id, remainingStock === 0
+        ? `Trato cerrado. Vendido por ₿ ${formatBtc(listing.price_sats)}. Era la última unidad: el artículo se agotó. El pago queda retenido en custodia hasta que el comprador confirme que recibió el producto.`
+        : `Trato cerrado. Vendido por ₿ ${formatBtc(listing.price_sats)}. Quedan ${remainingStock} ${remainingStock === 1 ? 'unidad' : 'unidades'} de este artículo. El pago queda retenido en custodia hasta que el comprador confirme que recibió el producto.`],
     );
 
     const row = await fetchOrder(created.rows[0].id);
-    return res.status(201).json({ order: presentOrder(row), conversation_id: conv.id });
+    const updatedListing = await db.get('SELECT * FROM listings WHERE id = $1', [listing.id]);
+    return res.status(201).json({
+      order: presentOrder(row),
+      conversation_id: conv.id,
+      listing: updatedListing ? {
+        id: updatedListing.id,
+        stock: Number(updatedListing.stock ?? 0),
+        cantidad: Number(updatedListing.stock ?? 0),
+        status: updatedListing.status,
+      } : null,
+    });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo marcar el anuncio como vendido.' });
@@ -250,7 +277,10 @@ router.get('/account', requireAuth, async (req, res) => {
       listings: myListings.rows.map((r) => ({
         id: r.id, title: r.title, description: r.description,
         price_sats: Number(r.price_sats), price_btc: formatBtc(r.price_sats),
-        price_display: `₿ ${formatBtc(r.price_sats)}`, status: r.status, created_at: r.created_at,
+        price_display: `₿ ${formatBtc(r.price_sats)}`,
+        stock: Number(r.stock ?? 1), cantidad: Number(r.stock ?? 1),
+        stock_label: Number(r.stock ?? 1) === 1 ? '1 unidad' : `${Number(r.stock ?? 1)} unidades`,
+        status: r.status, created_at: r.created_at,
       })),
       purchases: purchases.rows.map(presentOrder),
       sales: sales.rows.map(presentOrder),
