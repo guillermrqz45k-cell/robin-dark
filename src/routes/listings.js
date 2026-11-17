@@ -5,15 +5,20 @@ const express = require('express');
 const db = require('../db');
 const { formatBtc } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { requireIdParam, requireObjectBody, escapeLike } = require('../middleware/validate');
 
 const router = express.Router();
 const SATS_PER_BTC = 100_000_000;
+// 21 millones de BTC es toda la oferta máxima de Bitcoin: ningún
+// precio real puede ser mayor. Antes se aceptaba cualquier número
+// y un valor enorme desbordaba el entero de la base de datos (500).
+const MAX_PRICE_BTC = 21_000_000;
 
 function toSats(priceBtc) {
   const btc = Number(priceBtc);
-  if (!Number.isFinite(btc) || btc <= 0) return null;
+  if (!Number.isFinite(btc) || btc <= 0 || btc > MAX_PRICE_BTC) return null;
   const sats = Math.round(btc * SATS_PER_BTC);
-  if (sats <= 0) return null;
+  if (!Number.isSafeInteger(sats) || sats <= 0) return null;
   return sats;
 }
 
@@ -36,16 +41,21 @@ function present(row) {
 // GET /api/listings?search=texto — solo anuncios disponibles, más recientes primero.
 router.get('/', async (req, res) => {
   try {
-    const search = String(req.query.search || '').trim();
+    // Búsqueda limitada a 100 caracteres: sin límite, una búsqueda
+    // gigante es una forma barata de cargar el servidor.
+    const search = String(req.query.search || '').trim().slice(0, 100);
     let rows;
     if (search) {
-      const like = `%${search}%`;
+      // Los comodines % y _ se escapan: buscar "%" ya no devuelve
+      // toda la tienda. La consulta sigue siendo parametrizada
+      // (nunca hubo inyección SQL aquí), con ESCAPE '\'.
+      const like = `%${escapeLike(search)}%`;
       // Postgres: ILIKE (sin distinción de mayúsculas). SQLite: LIKE.
       const op = db.usePostgres ? 'ILIKE' : 'LIKE';
       const r = await db.query(
         `SELECT l.*, u.alias AS seller_alias FROM listings l
          JOIN users u ON u.id = l.seller_id
-         WHERE l.status = 'disponible' AND (l.title ${op} $1 OR l.description ${op} $1)
+         WHERE l.status = 'disponible' AND (l.title ${op} $1 ESCAPE '\\' OR l.description ${op} $1 ESCAPE '\\')
          ORDER BY l.created_at DESC LIMIT 100`,
         [like],
       );
@@ -67,17 +77,24 @@ router.get('/', async (req, res) => {
 
 // GET /api/listings/:id
 router.get('/:id', async (req, res) => {
-  const row = await db.get(
-    `SELECT l.*, u.alias AS seller_alias FROM listings l
-     JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
-    [req.params.id],
-  );
-  if (!row) return res.status(404).json({ error: 'Anuncio no encontrado.' });
-  return res.json({ listing: present(row) });
+  const id = requireIdParam(req, res);
+  if (id === null) return;
+  try {
+    const row = await db.get(
+      `SELECT l.*, u.alias AS seller_alias FROM listings l
+       JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
+      [id],
+    );
+    if (!row) return res.status(404).json({ error: 'Anuncio no encontrado.' });
+    return res.json({ listing: present(row) });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cargar el anuncio.' });
+  }
 });
 
 // POST /api/listings { title, description, price_btc }
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireObjectBody, async (req, res) => {
   try {
     const title = String(req.body.title || '').trim().slice(0, 120);
     const description = String(req.body.description || '').trim().slice(0, 2000);

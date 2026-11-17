@@ -13,6 +13,7 @@ const express = require('express');
 const db = require('../db');
 const { formatBtc } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -72,13 +73,25 @@ async function fetchOrder(id) {
 // SOLO EL VENDEDOR, y solo después de cerrar el trato en el chat.
 // Crea el pedido con el pago RETENIDO en custodia (estado: retenido)
 // y marca el anuncio como vendido. Requiere confirmación explícita.
+//
+// Correcciones de seguridad (carreras / TOCTOU):
+// - Antes se leía el estado del anuncio, se comprobaba y LUEGO se
+//   actualizaba: dos peticiones a la vez podían pasar la comprobación
+//   y crear dos pedidos del mismo anuncio. Ahora el cambio de estado
+//   es ATÓMICO: UPDATE ... WHERE status='disponible' y solo sigue
+//   si realmente cambió 1 fila. Además hay un índice único parcial
+//   en orders(listing_id) para pedidos no cancelados (ver src/db.js),
+//   así que la base de datos tampoco deja duplicar el pedido.
+// - Antes bastaba con haber abierto el chat (clic en "Contactar"):
+//   el trato se podía cerrar sin haber negociado nada. Ahora se
+//   exige al menos UN mensaje en esa conversación.
 async function markSold(req, res) {
   try {
     if (req.body.confirm !== true) {
       return res.status(400).json({ error: 'El vendedor debe confirmar explícitamente que el trato se cerró.' });
     }
     const listingId = Number(req.body.listing_id);
-    if (!listingId) return res.status(400).json({ error: 'Falta el anuncio.' });
+    if (!Number.isInteger(listingId) || listingId <= 0) return res.status(400).json({ error: 'Falta el anuncio.' });
 
     const listing = await db.get('SELECT * FROM listings WHERE id = $1', [listingId]);
     if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
@@ -86,7 +99,6 @@ async function markSold(req, res) {
     if (listing.seller_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo el vendedor de este anuncio puede marcarlo como vendido.' });
     }
-    if (listing.status !== 'disponible') return res.status(409).json({ error: 'Ese anuncio ya está vendido.' });
 
     // ¿Con qué comprador se cerró el trato? Por id o por alias.
     let buyer = null;
@@ -98,7 +110,8 @@ async function markSold(req, res) {
     if (!buyer) return res.status(400).json({ error: 'Indica el alias del comprador con el que cerraste el trato.' });
     if (buyer.id === req.user.id) return res.status(400).json({ error: 'No puedes venderte a ti mismo.' });
 
-    // El trato debe haberse negociado en el chat de este anuncio.
+    // El trato debe haberse negociado en el chat de este anuncio:
+    // conversación existente Y al menos un mensaje en ella.
     const conv = await db.get(
       'SELECT * FROM conversations WHERE listing_id = $1 AND buyer_id = $2 AND seller_id = $3',
       [listing.id, buyer.id, listing.seller_id],
@@ -106,21 +119,46 @@ async function markSold(req, res) {
     if (!conv) {
       return res.status(400).json({ error: 'Primero habla con ese comprador en el chat de este anuncio.' });
     }
+    const negotiated = await db.get(
+      'SELECT id FROM messages WHERE conversation_id = $1 LIMIT 1',
+      [conv.id],
+    );
+    if (!negotiated) {
+      return res.status(400).json({ error: 'Primero negocia el trato en el chat: tiene que haber al menos un mensaje.' });
+    }
+
+    // Cambio de estado ATÓMICO: solo el primer intento que lo
+    // encuentra 'disponible' lo marca vendido. Si otro intento
+    // llegó antes (o el anuncio ya estaba vendido), rowCount es 0
+    // y se rechaza con 409, sin crear un segundo pedido.
+    const claimed = await db.query(
+      "UPDATE listings SET status = 'vendido' WHERE id = $1 AND status = 'disponible'",
+      [listing.id],
+    );
+    if (!claimed.rowCount) {
+      return res.status(409).json({ error: 'Ese anuncio ya está vendido.' });
+    }
 
     // Un pedido CANCELADO (por ejemplo, por el admin al cancelar una
     // custodia) no bloquea volver a cerrar el trato: solo bloquean
-    // los pedidos activos (retenido/liberado).
-    const existing = await db.get("SELECT * FROM orders WHERE listing_id = $1 AND status != 'cancelado'", [listing.id]);
-    if (existing) return res.status(409).json({ error: 'Ese anuncio ya tiene un pedido.' });
-
-    // Pedido en custodia: el pago queda RETENIDO hasta que el comprador
-    // confirme que recibió el producto. No se libera aquí.
-    const created = await db.query(
-      `INSERT INTO orders (listing_id, buyer_id, seller_id, price_sats, status)
-       VALUES ($1, $2, $3, $4, 'retenido') RETURNING id`,
-      [listing.id, buyer.id, listing.seller_id, listing.price_sats],
-    );
-    await db.query('UPDATE listings SET status = $1 WHERE id = $2', ['vendido', listing.id]);
+    // los pedidos activos (retenido/liberado). El índice único
+    // parcial de la base de datos refuerza esta regla.
+    let created;
+    try {
+      created = await db.query(
+        `INSERT INTO orders (listing_id, buyer_id, seller_id, price_sats, status)
+         VALUES ($1, $2, $3, $4, 'retenido') RETURNING id`,
+        [listing.id, buyer.id, listing.seller_id, listing.price_sats],
+      );
+    } catch (e) {
+      // Si el índice único rechazó el duplicado (carrera ganada por
+      // otro intento), el anuncio ya quedó vendido: no hay pedido
+      // nuevo y no se devuelve un error 500.
+      if (/unique|UNIQUE/i.test(e.message || '')) {
+        return res.status(409).json({ error: 'Ese anuncio ya tiene un pedido.' });
+      }
+      throw e;
+    }
     await db.query(
       'INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)',
       [conv.id, req.user.id, `Trato cerrado. Vendido por ₿ ${formatBtc(listing.price_sats)}. El pago queda retenido en custodia hasta que el comprador confirme que recibió el producto.`],
@@ -134,27 +172,38 @@ async function markSold(req, res) {
   }
 }
 
-router.post('/mark-sold', requireAuth, markSold);
+router.post('/mark-sold', requireAuth, requireObjectBody, markSold);
 // La ruta antigua /api/orders ahora es la misma acción del vendedor:
 // no hay compra por parte del comprador. Un comprador que la llame
 // recibe 403 porque no es el vendedor del anuncio.
-router.post('/', requireAuth, markSold);
+router.post('/', requireAuth, requireObjectBody, markSold);
 
 // POST /api/orders/:id/confirm-receipt — SOLO EL COMPRADOR.
 // Confirmación explícita de que recibió el producto. Libera el pago
 // retenido al vendedor (retenido -> liberado). El vendedor NO puede
 // liberar el pago él mismo.
+//
+// Corrección de carrera: antes se leía el estado y luego se
+// actualizaba, así que dos confirmaciones a la vez podían pasar
+// el control. Ahora la liberación es ATÓMICA: UPDATE ... WHERE
+// status='retenido' y solo sigue si realmente cambió 1 fila.
+// La segunda confirmación recibe 409.
 router.post('/:id/confirm-receipt', requireAuth, async (req, res) => {
   try {
-    const order = await fetchOrder(Number(req.params.id));
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const order = await fetchOrder(id);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado.' });
     if (order.buyer_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo el comprador puede confirmar que recibió el producto y liberar el pago.' });
     }
-    if (order.status !== 'retenido') {
+    const released = await db.query(
+      "UPDATE orders SET status = 'liberado' WHERE id = $1 AND status = 'retenido'",
+      [id],
+    );
+    if (!released.rowCount) {
       return res.status(409).json({ error: 'Este pago ya no está retenido en custodia.' });
     }
-    await db.query('UPDATE orders SET status = $1 WHERE id = $2', ['liberado', order.id]);
     const conv = await db.get(
       'SELECT * FROM conversations WHERE listing_id = $1 AND buyer_id = $2 AND seller_id = $3',
       [order.listing_id, order.buyer_id, order.seller_id],
@@ -165,7 +214,7 @@ router.post('/:id/confirm-receipt', requireAuth, async (req, res) => {
         [conv.id, req.user.id, `Confirmo que recibí el producto. Pago liberado al vendedor: ₿ ${formatBtc(order.price_sats)}.`],
       );
     }
-    const updated = await fetchOrder(order.id);
+    const updated = await fetchOrder(id);
     return res.json({ order: presentOrder(updated) });
   } catch (e) {
     console.error(e);

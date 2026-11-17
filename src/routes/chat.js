@@ -4,6 +4,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -29,9 +30,12 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // POST /api/chat { listing_id } — abrir (o reutilizar) la conversación de un anuncio.
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireObjectBody, async (req, res) => {
   try {
     const listingId = Number(req.body.listing_id);
+    if (!Number.isInteger(listingId) || listingId <= 0) {
+      return res.status(400).json({ error: 'Anuncio no válido.' });
+    }
     const listing = await db.get('SELECT * FROM listings WHERE id = $1', [listingId]);
     if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
     if (listing.seller_id === req.user.id) {
@@ -58,7 +62,9 @@ router.post('/', requireAuth, async (req, res) => {
 // custodia (escrow) de ese trato, para mostrarlos en el chat.
 router.get('/:id/messages', requireAuth, async (req, res) => {
   try {
-    const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [req.params.id]);
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [id]);
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
     if (conv.buyer_id !== req.user.id && conv.seller_id !== req.user.id) {
       return res.status(403).json({ error: 'Este chat no es tuyo.' });
@@ -92,11 +98,13 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
 // SOLO envía un mensaje. Nunca crea un pedido, nunca marca el anuncio
 // como vendido y nunca muestra "compra exitosa": el chat es solo para
 // contactar al vendedor y negociar el trato.
-router.post('/:id/messages', requireAuth, async (req, res) => {
+router.post('/:id/messages', requireAuth, requireObjectBody, async (req, res) => {
   try {
     const body = String(req.body.body || '').trim().slice(0, 2000);
     if (!body) return res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
-    const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [req.params.id]);
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [id]);
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
     if (conv.buyer_id !== req.user.id && conv.seller_id !== req.user.id) {
       return res.status(403).json({ error: 'Este chat no es tuyo.' });

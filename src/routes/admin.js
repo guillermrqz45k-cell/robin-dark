@@ -28,6 +28,8 @@ const db = require('../db');
 const { formatBtc } = require('../db');
 const { signToken } = require('../auth');
 const { requireAdmin } = require('../middleware/auth');
+const { adminLoginLimiter } = require('../middleware/rateLimit');
+const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -44,7 +46,10 @@ function adminConfigured() {
 }
 
 // POST /api/admin/login { alias, password }
-router.post('/login', async (req, res) => {
+// Límite estricto (adminLoginLimiter): 5 intentos / 15 min por IP.
+// Antes no había límite y la contraseña de admin se podía atacar
+// por fuerza bruta sin parar.
+router.post('/login', adminLoginLimiter, requireObjectBody, async (req, res) => {
   try {
     if (!adminConfigured()) {
       return res.status(503).json({
@@ -167,7 +172,7 @@ router.get('/users', requireAdmin, async (req, res, next) => {
       `SELECT u.id, u.alias, u.created_at,
               (SELECT COUNT(*) FROM listings l WHERE l.seller_id = u.id) AS listings_count,
               (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = u.id OR o.seller_id = u.id) AS orders_count
-       FROM users u ORDER BY u.created_at DESC, u.id DESC`,
+       FROM users u ORDER BY u.created_at DESC, u.id DESC LIMIT 500`,
     );
     res.json({
       users: rows.map((r) => ({
@@ -188,7 +193,7 @@ router.get('/listings', requireAdmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT l.*, u.alias AS seller_alias FROM listings l
-       JOIN users u ON u.id = l.seller_id ORDER BY l.created_at DESC, l.id DESC`,
+       JOIN users u ON u.id = l.seller_id ORDER BY l.created_at DESC, l.id DESC LIMIT 500`,
     );
     res.json({
       listings: rows.map((r) => ({
@@ -216,7 +221,7 @@ const ORDERS_SQL = `SELECT o.*, l.title AS listing_title, b.alias AS buyer_alias
 // GET /api/admin/orders — todos los pedidos con su custodia.
 router.get('/orders', requireAdmin, async (req, res, next) => {
   try {
-    const { rows } = await db.query(`${ORDERS_SQL} ORDER BY o.created_at DESC, o.id DESC`);
+    const { rows } = await db.query(`${ORDERS_SQL} ORDER BY o.created_at DESC, o.id DESC LIMIT 500`);
     res.json({ orders: rows.map(presentOrder) });
   } catch (e) {
     next(e);
@@ -228,7 +233,7 @@ router.get('/orders', requireAdmin, async (req, res, next) => {
 // custodia, liberado = pagado al vendedor, cancelado = devuelto.
 router.get('/escrows', requireAdmin, async (req, res, next) => {
   try {
-    const { rows } = await db.query(`${ORDERS_SQL} ORDER BY o.created_at DESC, o.id DESC`);
+    const { rows } = await db.query(`${ORDERS_SQL} ORDER BY o.created_at DESC, o.id DESC LIMIT 500`);
     res.json({ escrows: rows.map(presentOrder) });
   } catch (e) {
     next(e);
@@ -240,7 +245,8 @@ router.get('/escrows', requireAdmin, async (req, res, next) => {
 // de tratos. Antes se borran sus conversaciones y mensajes.
 router.delete('/listings/:id', requireAdmin, async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = requireIdParam(req, res);
+    if (id === null) return;
     const listing = await db.get('SELECT * FROM listings WHERE id = $1', [id]);
     if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
     const order = await db.get('SELECT id FROM orders WHERE listing_id = $1', [id]);
@@ -264,9 +270,21 @@ router.delete('/listings/:id', requireAdmin, async (req, res) => {
 // El pedido pasa a 'cancelado' y el anuncio vuelve a 'disponible',
 // como si el trato nunca se hubiera cerrado. Solo vale para custodias
 // retenidas: una ya liberada no se puede cancelar.
+//
+// Correcciones:
+// - Cancelación ATÓMICA (UPDATE ... WHERE status='retenido'):
+//   antes se leía el estado y luego se actualizaba, así que dos
+//   cancelaciones a la vez podían pasar el control.
+// - Antes se insertaba un mensaje en el chat con sender_id del
+//   vendedor, haciéndose pasar por él ("El administrador canceló…"):
+//   eso es suplantación dentro del chat privado de dos usuarios.
+//   Ya no se inserta ningún mensaje falso; la cancelación se ve
+//   en el estado de la custodia y del anuncio, que ambos pueden
+//   consultar en el chat y en Mi cuenta.
 router.post('/escrows/:id/cancel', requireAdmin, async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const id = requireIdParam(req, res);
+    if (id === null) return;
     const order = await db.get(
       `SELECT o.*, l.title AS listing_title, b.alias AS buyer_alias, s.alias AS seller_alias
        FROM orders o JOIN listings l ON l.id = o.listing_id
@@ -275,21 +293,14 @@ router.post('/escrows/:id/cancel', requireAdmin, async (req, res) => {
       [id],
     );
     if (!order) return res.status(404).json({ error: 'Custodia no encontrada.' });
-    if (order.status !== 'retenido') {
+    const cancelled = await db.query(
+      "UPDATE orders SET status = 'cancelado' WHERE id = $1 AND status = 'retenido'",
+      [id],
+    );
+    if (!cancelled.rowCount) {
       return res.status(409).json({ error: 'Solo se puede cancelar una custodia retenida. Esta ya está ' + order.status + '.' });
     }
-    await db.query('UPDATE orders SET status = $1 WHERE id = $2', ['cancelado', id]);
     await db.query('UPDATE listings SET status = $1 WHERE id = $2', ['disponible', order.listing_id]);
-    const conv = await db.get(
-      'SELECT * FROM conversations WHERE listing_id = $1 AND buyer_id = $2 AND seller_id = $3',
-      [order.listing_id, order.buyer_id, order.seller_id],
-    );
-    if (conv) {
-      await db.query(
-        'INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)',
-        [conv.id, order.seller_id, 'El administrador canceló la custodia de este trato. El anuncio vuelve a estar disponible.'],
-      );
-    }
     const updated = await db.get(
       `SELECT o.*, l.title AS listing_title, b.alias AS buyer_alias, s.alias AS seller_alias
        FROM orders o JOIN listings l ON l.id = o.listing_id
