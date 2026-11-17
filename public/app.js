@@ -88,7 +88,7 @@ async function openProfile(alias) {
 function closeProfile() { $('#modal').hidden = true; }
 
 function highlightListing(id) {
-  const card = listingsEl.querySelector(`.listing[data-id="${id}"]`);
+  const card = document.querySelector(`.listing[data-id="${id}"]`);
   if (!card) return;
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   card.classList.add('flash');
@@ -108,6 +108,7 @@ function showView(name, { skipLoad = false } = {}) {
   if (name === 'account') loadAccount();
   if (name === 'chat') loadConversations();
   if (name === 'admin') loadAdmin();
+  if (name === 'publicaciones') loadPublicaciones();
 }
 
 document.querySelectorAll('.nav-btn').forEach((b) => {
@@ -154,29 +155,87 @@ function showShopMsg(text, kind = '') {
   el.className = `msg ${kind}`;
 }
 
+// ---- Tarjeta de anuncio (la misma en Tienda y en Publicaciones) ----
+function listingCardHtml(l) {
+  const agotado = l.status !== 'disponible';
+  return `
+      <article class="card listing" data-id="${l.id}">
+        <h3>${esc(l.title)}</h3>
+        <p class="muted">${esc(l.description || '')}</p>
+        <p class="price">${esc(l.price_display)}</p>
+        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} · Pagos solo en BTC</p>
+        ${agotado ? '<p class="muted small">Estado: <strong>Agotado</strong></p>' : ''}
+        <div class="row">
+          ${agotado
+            ? '<span class="muted small">Agotado. Nadie puede contactar por este anuncio hasta que el vendedor reponga stock.</span>'
+            : l.seller_id === api.user?.id
+              ? '<span class="muted small">Es tu anuncio. El trato se cierra en el chat y solo tú puedes marcarlo como vendido.</span>'
+              : '<button class="cta contact-btn" data-id="${l.id}">Contactar al vendedor</button>'}
+        </div>
+        <p class="muted small">El chat es solo para contactar y negociar. No hay compra automática: nada se vende por enviar un mensaje.</p>
+      </article>`;
+}
+
 async function loadListings() {
   const q = $('#search-input').value.trim();
   try {
     const data = await api.call('/api/listings' + (q ? '?search=' + encodeURIComponent(q) : ''));
     $('#empty-shop').hidden = data.listings.length > 0;
     showShopMsg('');
-    listingsEl.innerHTML = data.listings.map((l) => `
-      <article class="card listing" data-id="${l.id}">
-        <h3>${esc(l.title)}</h3>
-        <p class="muted">${esc(l.description || '')}</p>
-        <p class="price">${esc(l.price_display)}</p>
-        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} · Pagos solo en BTC</p>
-        <div class="row">
-          ${l.seller_id === api.user?.id
-            ? '<span class="muted small">Es tu anuncio. El trato se cierra en el chat y solo tú puedes marcarlo como vendido.</span>'
-            : '<button class="cta contact-btn" data-id="${l.id}">Contactar al vendedor</button>'}
-        </div>
-        <p class="muted small">El chat es solo para contactar y negociar. No hay compra automática: nada se vende por enviar un mensaje.</p>
-      </article>`).join('');
+    listingsEl.innerHTML = data.listings.map(listingCardHtml).join('');
   } catch (e) {
     listingsEl.innerHTML = `<p class="msg error">${esc(e.message)}</p>`;
   }
+  // Si el apartado Publicaciones está a la vista, se refresca con
+  // la Tienda: un anuncio que se agota o se repone cambia en los dos.
+  if (!$('#view-publicaciones').hidden) loadPublicaciones();
 }
+
+// ---- Publicaciones: todas las de todos los usuarios ----
+// Contadores en vivo (total, disponibles, agotadas, vendedores) y
+// filtro por estado. Reutiliza las tarjetas de la Tienda: alias
+// clicable con perfil e insignia, precio BTC, stock y contacto.
+const publicacionesEl = $('#publicaciones-listings');
+let pubFilter = 'todas';
+
+function showPubMsg(text, kind = '') {
+  const el = $('#pub-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = `msg ${kind}`;
+}
+
+async function loadPublicaciones() {
+  try {
+    const data = await api.call('/api/listings/all?status=' + encodeURIComponent(pubFilter));
+    const c = data.counts || {};
+    const set = (id, v) => { const el = $(id); if (el) el.textContent = Number(v ?? 0).toLocaleString('es'); };
+    set('#pub-total', c.total);
+    set('#pub-disponibles', c.disponibles);
+    set('#pub-agotadas', c.agotadas);
+    set('#pub-vendedores', c.vendedores);
+    $('#empty-publicaciones').hidden = data.listings.length > 0;
+    showPubMsg('');
+    publicacionesEl.innerHTML = data.listings.map(listingCardHtml).join('');
+  } catch (e) {
+    publicacionesEl.innerHTML = `<p class="msg error">${esc(e.message)}</p>`;
+  }
+}
+
+publicacionesEl.addEventListener('click', async (ev) => {
+  const seller = ev.target.closest('.seller-link');
+  if (seller) return openProfile(seller.dataset.alias);
+  const contact = ev.target.closest('.contact-btn');
+  if (contact) return openChatForListing(Number(contact.dataset.id));
+});
+
+document.querySelectorAll('.pub-filter').forEach((b) => {
+  b.addEventListener('click', () => {
+    pubFilter = b.dataset.filter;
+    document.querySelectorAll('.pub-filter').forEach((x) => x.classList.toggle('active', x === b));
+    loadPublicaciones();
+  });
+});
 
 listingsEl.addEventListener('click', async (ev) => {
   const seller = ev.target.closest('.seller-link');
@@ -220,7 +279,10 @@ async function openChatForListing(id) {
     const input = $('#chat-input');
     if (input) input.focus();
   } catch (e) {
+    // El error tiene que verse donde está el usuario: en la Tienda
+    // o en Publicaciones, no solo en #shop-msg.
     showShopMsg(e.message, 'error');
+    if (!$('#view-publicaciones').hidden) showPubMsg(e.message, 'error');
   }
 }
 

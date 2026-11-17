@@ -11,6 +11,7 @@
   <div class="brand"><span class="logo">◆</span> Robin Dark</div>
   <nav>
     <button data-view="shop" class="nav-btn active">Tienda</button>
+    <button data-view="publicaciones" class="nav-btn">Publicaciones</button>
     <button data-view="sell" class="nav-btn">Vender</button>
     <button data-view="account" class="nav-btn">Mi cuenta</button>
     <button data-view="chat" class="nav-btn">Mensajes <span id="chat-badge" class="badge" hidden></span></button>
@@ -41,6 +42,28 @@
     <div class="ticker"><span>Pagos solo en BTC ₿ &nbsp;·&nbsp; Registro anónimo &nbsp;·&nbsp; Todo queda guardado &nbsp;·&nbsp; Chat privado entre comprador y vendedor &nbsp;·&nbsp;</span><span>Pagos solo en BTC ₿ &nbsp;·&nbsp; Registro anónimo &nbsp;·&nbsp; Todo queda guardado &nbsp;·&nbsp; Chat privado entre comprador y vendedor &nbsp;·&nbsp;</span></div>
     <div id="listings" class="grid"></div>
     <p id="empty-shop" class="empty" hidden>Todavía no hay anuncios. Sé la primera persona en publicar algo.</p>
+  </section>
+
+  <!-- Publicaciones: todas las de todos los usuarios -->
+  <section id="view-publicaciones" class="view" hidden>
+    <div class="hero">
+      <h1>Publicaciones <span>— de todos los usuarios</span></h1>
+      <p class="welcome">Todas las publicaciones del mercado, disponibles y agotadas. La Tienda es el escaparate con buscador; aquí se ve todo lo que se ha publicado.</p>
+      <div class="stats" aria-label="Contadores de publicaciones">
+        <div class="stat"><strong id="pub-total">0</strong><span>publicaciones en total</span></div>
+        <div class="stat"><strong id="pub-disponibles">0</strong><span>disponibles</span></div>
+        <div class="stat"><strong id="pub-agotadas">0</strong><span>agotadas</span></div>
+        <div class="stat"><strong id="pub-vendedores">0</strong><span>vendedores publicando</span></div>
+      </div>
+      <div class="row pub-filters" role="group" aria-label="Filtrar publicaciones por estado">
+        <button class="nav-btn pub-filter active" data-filter="todas">Todas</button>
+        <button class="nav-btn pub-filter" data-filter="disponible">Disponibles</button>
+        <button class="nav-btn pub-filter" data-filter="agotadas">Agotadas</button>
+      </div>
+      <p id="pub-msg" class="msg" role="status"></p>
+    </div>
+    <div id="publicaciones-listings" class="grid"></div>
+    <p id="empty-publicaciones" class="empty" hidden>Todavía no hay publicaciones.</p>
   </section>
 
   <!-- Vender -->
