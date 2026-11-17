@@ -13,9 +13,21 @@ const usePostgres = Boolean(process.env.DATABASE_URL);
 let pool = null; // pg
 let sqlite = null; // node:sqlite DatabaseSync
 
-function toSqlitePlaceholders(sql) {
+function toSqlitePlaceholders(sql, params = []) {
   // $1, $2, ... -> ?, ?, ...
-  return sql.replace(/\$\d+/g, '?');
+  // OJO: un mismo $N puede aparecer dos veces (por ejemplo
+  // "WHERE buyer_id = $1 OR seller_id = $1"). Postgres reutiliza
+  // el parámetro, pero node:sqlite NO: cada ? necesita su propio
+  // valor, y si falta lo pone en NULL sin avisar (el vendedor no
+  // veía sus conversaciones y la búsqueda por descripción no
+  // encontraba nada en local). Por eso aquí se duplica el valor
+  // por cada aparición del marcador.
+  const outParams = [];
+  const outSql = sql.replace(/\$\d+/g, (m) => {
+    outParams.push(params[Number(m.slice(1)) - 1]);
+    return '?';
+  });
+  return { sql: outSql, params: outParams };
 }
 
 function formatBtc(sats) {
@@ -225,16 +237,17 @@ async function query(sql, params = []) {
     const res = await pool.query(sql, params);
     return { rows: res.rows, rowCount: res.rowCount };
   }
-  const stmt = sqlite.prepare(toSqlitePlaceholders(sql));
+  const { sql: sqliteSql, params: sqliteParams } = toSqlitePlaceholders(sql, params);
+  const stmt = sqlite.prepare(sqliteSql);
   if (/^\s*(SELECT|WITH)\b/i.test(sql)) {
-    return { rows: stmt.all(...params), rowCount: 0 };
+    return { rows: stmt.all(...sqliteParams), rowCount: 0 };
   }
   // INSERT/UPDATE/DELETE: si trae RETURNING, usar .get() para obtener la fila.
   if (/RETURNING\b/i.test(sql)) {
-    const row = stmt.get(...params);
+    const row = stmt.get(...sqliteParams);
     return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
   }
-  const info = stmt.run(...params);
+  const info = stmt.run(...sqliteParams);
   return { rows: [], rowCount: info.changes, lastID: Number(info.lastInsertRowid) };
 }
 
