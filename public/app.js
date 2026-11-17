@@ -36,6 +36,22 @@ function badgeHtml(badge) {
   return `<span class="badge badge-${esc(badge.key || 'nuevo')}">${esc(badge.label)}</span>`;
 }
 
+// Letras de rango: vienen del servidor (rank_badges) y solo se
+// muestran aquí: A dorado, M azul, V verde, N gris.
+function rankBadgesHtml(letters) {
+  const list = Array.isArray(letters) ? letters : [];
+  if (!list.length) return '';
+  const titles = { A: 'Admin', M: 'Moderador', V: 'Veterano', N: 'Nuevo usuario' };
+  const title = list.map((l) => titles[l] || l).join(' · ');
+  return `<span class="rank-letters" title="Rango: ${esc(title)}">${list.map((l) => `<span class="rank rank-${esc(String(l).toLowerCase())}">${esc(l)}</span>`).join('')}</span>`;
+}
+
+// Insignia de verificado: el admin y los usuarios que el admin
+// verifique la muestran junto a las letras de rango.
+function verifiedHtml(verified) {
+  return verified ? '<span class="badge badge-verificado">✓ Verificado</span>' : '';
+}
+
 // Caché de perfiles por alias, para no pedir el mismo perfil cada
 // vez que aparece un alias en la tienda o en el chat.
 const profileCache = new Map();
@@ -48,7 +64,7 @@ async function fetchProfile(alias) {
 async function badgeForAlias(alias) {
   try {
     const p = await fetchProfile(alias);
-    return badgeHtml(p.badge);
+    return `${badgeHtml(p.badge)} ${rankBadgesHtml(p.rank_badges)}${verifiedHtml(p.verified)}`;
   } catch (e) { return ''; }
 }
 
@@ -60,8 +76,8 @@ function profileHtml(p) {
         <span class="price">${esc(l.price_display)}</span> · <span class="muted small">Stock: ${esc(l.stock_label)}</span>
       </button>`).join('') : '<p class="muted">Sin anuncios activos en este momento.</p>';
   return `
-    <h3>◆ ${esc(p.alias)} ${badgeHtml(p.badge)}</h3>
-    <p class="muted small">Miembro desde ${esc(memberDate)} (${p.member_days} ${p.member_days === 1 ? 'día' : 'días'})</p>
+    <h3>◆ ${esc(p.alias)} ${badgeHtml(p.badge)} ${rankBadgesHtml(p.rank_badges)}${verifiedHtml(p.verified)}</h3>
+    <p class="muted small">Miembro desde ${esc(memberDate)} (${p.member_days} ${p.member_days === 1 ? 'día' : 'días'}) · Rango: <strong>${esc(p.rank_label || 'Nuevo usuario')}</strong>${p.verified ? ' · ✓ Verificado' : ''}</p>
     <div class="profile-stats">
       <div class="stat"><strong>${p.reputation} / 100</strong><span>reputación</span></div>
       <div class="stat"><strong>${p.closed_total}</strong><span>tratos cerrados</span></div>
@@ -163,7 +179,7 @@ function listingCardHtml(l) {
         <h3>${esc(l.title)}</h3>
         <p class="muted">${esc(l.description || '')}</p>
         <p class="price">${esc(l.price_display)}</p>
-        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} · Pagos solo en BTC</p>
+        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} ${rankBadgesHtml(l.seller_rank_badges)}${verifiedHtml(l.seller_verified)} · Pagos solo en BTC</p>
         ${agotado ? '<p class="muted small">Estado: <strong>Agotado</strong></p>' : ''}
         <div class="row">
           ${agotado
@@ -596,7 +612,7 @@ async function loadMessages(id, { silent = false } = {}) {
     }
     $('#chat-messages').innerHTML = d.messages.map((m) => `
       <div class="bubble ${m.sender_id === api.user.id ? 'mine' : ''}">
-        <strong>${esc(m.sender_alias)}</strong><br>${esc(m.body)}</div>`).join('') || '<p class="muted">Sin mensajes todavía. Habla aquí para negociar el trato: enviar un mensaje no compra nada.</p>';
+        <strong>${esc(m.sender_alias)}</strong> ${rankBadgesHtml(m.sender_rank_badges)}${verifiedHtml(m.sender_verified)}<br>${esc(m.body)}</div>`).join('') || '<p class="muted">Sin mensajes todavía. Habla aquí para negociar el trato: enviar un mensaje no compra nada.</p>';
     if (box) box.scrollTop = wasAtBottom ? box.scrollHeight : prevScroll;
     $('#chat-form').hidden = false;
     markConversationSeen(id, d.messages);
@@ -752,9 +768,26 @@ async function loadAdminTab() {
     } else if (adminTab === 'usuarios') {
       const d = await adminApi.call('/api/admin/users');
       content.innerHTML = adminTable(
-        ['#', 'Alias', 'Registrado', 'Anuncios', 'Pedidos'],
-        d.users.map((u) => [u.id, `<strong>${esc(u.alias)}</strong>`, esc(u.created_at), u.listings_count, u.orders_count]),
-      );
+        ['#', 'Alias', 'Rango', 'Verificado', 'Registrado', 'Anuncios', 'Pedidos'],
+        d.users.map((u) => [
+          u.id,
+          `<strong>${esc(u.alias)}</strong>`,
+          // El admin (A) no se puede cambiar: muestra sus 4 letras.
+          // Los demás se cambian con el selector (M/V/N, nunca A).
+          u.rank === 'admin'
+            ? `${rankBadgesHtml(u.rank_badges)} <span class="muted small">Admin</span>`
+            : `<select class="admin-rank-select" data-id="${u.id}" data-alias="${esc(u.alias)}" aria-label="Rango de ${esc(u.alias)}">
+                 <option value="moderator" ${u.rank === 'moderator' ? 'selected' : ''}>Moderador (M)</option>
+                 <option value="veteran" ${u.rank === 'veteran' ? 'selected' : ''}>Veterano (V)</option>
+                 <option value="new" ${u.rank === 'new' ? 'selected' : ''}>Nuevo (N)</option>
+               </select> ${rankBadgesHtml(u.rank_badges)}`,
+          // Al admin no se le puede quitar la verificación.
+          u.verified
+            ? `<span class="badge badge-verificado">✓ Verificado</span>${u.rank === 'admin' ? '' : ` <button class="ghost admin-verify-btn" data-id="${u.id}" data-verified="false">Quitar verificación</button>`}`
+            : `<button class="ghost admin-verify-btn" data-id="${u.id}" data-verified="true">Verificar</button>`,
+          esc(u.created_at), u.listings_count, u.orders_count,
+        ]),
+      ) + '<p class="muted small">Rangos: A = Admin (solo el dueño, con todas las letras), M = Moderador, V = Veterano, N = Nuevo usuario. El moderador muestra M, V y N; el veterano V y N; el nuevo solo N. La verificación muestra ✓ Verificado junto a las letras.</p>';
     } else if (adminTab === 'anuncios') {
       const d = await adminApi.call('/api/admin/listings');
       content.innerHTML = adminTable(
@@ -814,7 +847,29 @@ $('#admin-content').addEventListener('click', async (ev) => {
       await adminApi.call(`/api/admin/escrows/${cancel.dataset.id}/cancel`, { method: 'POST', body: JSON.stringify({}) });
       loadAdminTab(); loadStats(); loadListings();
     } catch (e) { alert(e.message); }
+    return;
   }
+  const verify = ev.target.closest('.admin-verify-btn');
+  if (verify) {
+    const want = verify.dataset.verified === 'true';
+    if (!confirm(want ? '¿Verificar a este usuario? Mostrará la insignia ✓ Verificado junto a sus letras de rango.' : '¿Quitar la verificación a este usuario? Dejará de mostrar ✓ Verificado.')) return;
+    try {
+      await adminApi.call(`/api/admin/users/${verify.dataset.id}/verify`, { method: 'POST', body: JSON.stringify({ verified: want }) });
+      loadAdminTab();
+    } catch (e) { alert(e.message); }
+  }
+});
+
+// Cambiar el rango desde el selector de la pestaña Usuarios.
+$('#admin-content').addEventListener('change', async (ev) => {
+  const sel = ev.target.closest('.admin-rank-select');
+  if (!sel) return;
+  const labels = { moderator: 'Moderador (M)', veteran: 'Veterano (V)', new: 'Nuevo usuario (N)' };
+  if (!confirm(`¿Cambiar el rango de ${sel.dataset.alias} a ${labels[sel.value] || sel.value}?`)) { loadAdminTab(); return; }
+  try {
+    await adminApi.call(`/api/admin/users/${sel.dataset.id}/rank`, { method: 'POST', body: JSON.stringify({ rank: sel.value }) });
+    loadAdminTab();
+  } catch (e) { alert(e.message); loadAdminTab(); }
 });
 
 // Modal (detalle rápido, sin categorías) y perfil público.

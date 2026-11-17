@@ -190,6 +190,15 @@ main { max-width: 1100px; margin: 0 auto; padding: 20px; perspective: 1200px; }
 .badge-top { background: linear-gradient(135deg, #ffe9a8, #f2c14e); color: #1a1200; box-shadow: 0 2px 0 #6b4d05, 0 0 12px rgba(242, 193, 78, .4); }
 .badge-confiable { background: linear-gradient(180deg, #3a2d10, #241c0c); color: var(--gold); border: 1px solid var(--gold); }
 .badge-nuevo { background: linear-gradient(180deg, #2a2110, #171208); color: var(--muted); border: 1px solid var(--line); }
+/* Letras de rango: A dorado, M azul, V verde, N gris. Van junto a
+   la insignia de reputación en tienda, chat y perfil. */
+.rank-letters { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 2px; }
+.rank { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 6px; font-size: .75rem; font-weight: 900; line-height: 1; }
+.rank-a { background: var(--gold-grad); color: #1a1200; box-shadow: 0 2px 0 #6b4d05, 0 0 10px rgba(242, 193, 78, .45); }
+.rank-m { background: linear-gradient(180deg, #1d4ed8, #1e3a8a); color: #dbeafe; box-shadow: 0 2px 0 #172554; }
+.rank-v { background: linear-gradient(180deg, #15803d, #14532d); color: #dcfce7; box-shadow: 0 2px 0 #052e16; }
+.rank-n { background: linear-gradient(180deg, #3f3f46, #27272a); color: #d4d4d8; border: 1px solid var(--line); }
+.admin-rank-select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; font: inherit; }
 .chat-peer {
   font-weight: 800; padding: 10px 12px; margin-bottom: 10px;
   background: linear-gradient(160deg, #241c0c, var(--panel));
