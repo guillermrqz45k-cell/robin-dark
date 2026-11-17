@@ -129,9 +129,10 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
       count('conversations'),
       count('messages'),
     ]);
-    const [disponible, vendido] = await Promise.all([
+    const [disponible, vendido, agotado] = await Promise.all([
       count('listings', "WHERE status = $1", ['disponible']),
       count('listings', "WHERE status = $1", ['vendido']),
+      count('listings', "WHERE status = $1", ['agotado']),
     ]);
     const [retenido, liberado, cancelado] = await Promise.all([
       count('orders', "WHERE status = $1", ['retenido']),
@@ -148,6 +149,7 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
       messages,
       listings_disponible: disponible,
       listings_vendido: vendido,
+      listings_agotado: agotado,
       tratos_cerrados: liberado,
       escrows: {
         retenido,
@@ -203,6 +205,8 @@ router.get('/listings', requireAdmin, async (req, res, next) => {
         price_sats: Number(r.price_sats),
         price_btc: formatBtc(r.price_sats),
         price_display: `₿ ${formatBtc(r.price_sats)}`,
+        stock: Number(r.stock ?? 1),
+        cantidad: Number(r.stock ?? 1),
         status: r.status,
         seller_id: r.seller_id,
         seller_alias: r.seller_alias,
@@ -267,9 +271,10 @@ router.delete('/listings/:id', requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/escrows/:id/cancel — cancela una custodia RETENIDA.
-// El pedido pasa a 'cancelado' y el anuncio vuelve a 'disponible',
-// como si el trato nunca se hubiera cerrado. Solo vale para custodias
-// retenidas: una ya liberada no se puede cancelar.
+// El pedido pasa a 'cancelado' y el anuncio vuelve a 'disponible'
+// con UNA unidad devuelta al stock (la unidad de ese trato).
+// Solo vale para custodias retenidas: una ya liberada no se puede
+// cancelar.
 //
 // Correcciones:
 // - Cancelación ATÓMICA (UPDATE ... WHERE status='retenido'):
@@ -300,7 +305,7 @@ router.post('/escrows/:id/cancel', requireAdmin, async (req, res) => {
     if (!cancelled.rowCount) {
       return res.status(409).json({ error: 'Solo se puede cancelar una custodia retenida. Esta ya está ' + order.status + '.' });
     }
-    await db.query('UPDATE listings SET status = $1 WHERE id = $2', ['disponible', order.listing_id]);
+    await db.query("UPDATE listings SET stock = stock + 1, status = 'disponible' WHERE id = $1", [order.listing_id]);
     const updated = await db.get(
       `SELECT o.*, l.title AS listing_title, b.alias AS buyer_alias, s.alias AS seller_alias
        FROM orders o JOIN listings l ON l.id = o.listing_id
