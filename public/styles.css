@@ -12,6 +12,16 @@
   --line: #6b5518;
 }
 * { box-sizing: border-box; }
+/* Las palabras largas sin espacios (alias, títulos, descripciones,
+   enlaces, mensajes) se parten dentro de su caja en vez de
+   ensancharla y salirse de la pantalla: era el desbordamiento
+   horizontal real en móvil y escritorio. */
+.card, .bubble, .conv, .chat-peer, .modal-card, .profile-listing,
+.admin-table td, .who, .stat, .seller-link, h1, h2, h3 {
+  overflow-wrap: break-word;
+}
+.grid > *, .chat-layout > *, .auth-grid > *, .profile-stats > * { min-width: 0; }
+.search-box input, .chat-form input { min-width: 0; }
 body {
   margin: 0;
   background:
@@ -63,11 +73,14 @@ button { cursor: pointer; }
 }
 main { max-width: 1100px; margin: 0 auto; padding: 20px; perspective: 1200px; }
 .hero { text-align: center; padding: 28px 12px 10px; }
-.hero h1 { font-size: clamp(2rem, 6vw, 3.4rem); margin: 0; line-height: 1.05; text-shadow: 0 4px 0 #000, 0 10px 30px rgba(0, 0, 0, .8); }
+.hero h1 { font-size: clamp(2rem, 6vw, 3.4rem); margin: 0; line-height: 1.15; text-shadow: 0 4px 0 #000, 0 10px 30px rgba(0, 0, 0, .8); }
 .hero h1 span {
   display: block;
   background: var(--gold-grad);
   -webkit-background-clip: text; background-clip: text; color: transparent;
+  /* Sin text-shadow heredada: la sombra negra tapaba el dorado y las
+     líneas se veían oscuras y pegadas en el teléfono. */
+  text-shadow: none;
   filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .9)) drop-shadow(0 0 18px rgba(242, 193, 78, .3));
 }
 .welcome { max-width: 760px; margin: 16px auto; color: #e8dcbd; font-size: 1.1rem; line-height: 1.6; }
@@ -156,7 +169,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 20px; perspective: 1200px; }
 .conv:hover { transform: translateY(-2px); }
 .conv.active { border-color: var(--gold); box-shadow: 0 6px 14px rgba(0, 0, 0, .5), 0 0 16px rgba(242, 193, 78, .3); }
 .chat-messages {
-  display: grid; gap: 10px; align-content: start; min-height: 220px;
+  display: grid; gap: 10px; align-content: start; min-height: 220px; max-height: 60vh; overflow-y: auto;
   background: linear-gradient(160deg, #1d1608, #0f0a04);
   border: 1px solid var(--line); border-radius: 16px; padding: 16px;
   box-shadow: inset 0 4px 16px rgba(0, 0, 0, .65), 0 8px 20px rgba(0, 0, 0, .5);
@@ -254,10 +267,33 @@ footer strong { color: var(--gold); }
 .modal[hidden] { display: none; }
 .modal-card {
   background: linear-gradient(160deg, #241c0c, #120d05);
-  border: 1px solid var(--gold); border-radius: 16px; padding: 24px; max-width: 520px; width: calc(100% - 32px); position: relative;
+  border: 1px solid var(--gold); border-radius: 16px; padding: 24px; max-width: 520px; width: calc(100% - 32px); max-height: 90vh; overflow-y: auto; position: relative;
   box-shadow: 0 30px 60px rgba(0, 0, 0, .8), 0 0 30px rgba(242, 193, 78, .25), inset 0 1px 0 rgba(255, 233, 168, .25);
   transform: perspective(900px) rotateX(1deg);
 }
 .modal-close { position: absolute; top: 10px; right: 10px; }
-@media (max-width: 700px) { .chat-layout { grid-template-columns: 1fr; } .auth-area { margin-left: 0; } }
+/* Móvil: la barra se apila sin salirse, los botones llegan a 44px
+   de alto para el tacto y nada se pega a los bordes. */
+@media (max-width: 700px) {
+  .chat-layout { grid-template-columns: 1fr; }
+  .auth-area { margin-left: 0; }
+  main { padding: 16px 14px; }
+  .topbar { padding: 10px 12px; gap: 10px; }
+  .brand { font-size: 1.25rem; }
+  .hero { padding: 18px 4px 8px; }
+  .welcome { font-size: 1rem; }
+  .nav-btn, .ghost, .cta, form button[type="submit"], .buy-btn { min-height: 44px; }
+  .nav-btn { padding: 10px 14px; }
+  .modal-card { padding: 20px 16px; }
+  .admin-table { font-size: .85rem; }
+  .admin-table th, .admin-table td { padding: 8px 10px; }
+  .stat strong { font-size: 1.6rem; }
+  .chat-messages { max-height: 55vh; }
+}
+/* Teléfonos muy angostos: título y letras de rango un poco más
+   pequeños para que no se apelotonen junto al alias. */
+@media (max-width: 380px) {
+  .hero h1 { font-size: 1.8rem; }
+  .rank { min-width: 24px; height: 24px; font-size: .9rem; }
+}
 
