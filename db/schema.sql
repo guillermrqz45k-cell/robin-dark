@@ -52,3 +52,8 @@ CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status, created_at D
 CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, created_at ASC);
+-- Un anuncio no puede tener dos pedidos ACTIVOS a la vez (defensa
+-- contra cierres simultáneos del mismo trato). Los pedidos
+-- cancelados no cuentan, así que el trato se puede re-cerrar.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_listing_active
+  ON orders (listing_id) WHERE status != 'cancelado';
