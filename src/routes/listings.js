@@ -114,6 +114,65 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/listings/all?status=todas|disponible|agotada&search=texto —
+// TODAS las publicaciones de todos los usuarios (disponibles y
+// agotadas), más recientes primero, con contadores en vivo. Es el
+// apartado «Publicaciones»: la Tienda (GET /api/listings) sigue
+// siendo solo lo disponible. Va ANTES de /:id para que Express no
+// confunda «all» con un id. «Agotadas» incluye el estado antiguo
+// «vendido», que también es un anuncio terminado. Nunca devuelve
+// password_hash ni datos privados: solo los campos de present().
+router.get('/all', async (req, res) => {
+  try {
+    const status = String(req.query.status || 'todas').trim().toLowerCase();
+    if (!['todas', 'disponible', 'agotada', 'agotadas'].includes(status)) {
+      return res.status(400).json({ error: 'El filtro tiene que ser Todas, Disponibles o Agotadas.' });
+    }
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const counts = await db.get(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN status = 'disponible' THEN 1 ELSE 0 END), 0) AS disponibles,
+              COALESCE(SUM(CASE WHEN status IN ('agotado', 'vendido') THEN 1 ELSE 0 END), 0) AS agotadas,
+              COUNT(DISTINCT seller_id) AS vendedores
+       FROM listings`,
+    );
+    const conditions = [];
+    const params = [];
+    if (status === 'disponible') {
+      conditions.push(`l.status = 'disponible'`);
+    } else if (status === 'agotada' || status === 'agotadas') {
+      conditions.push(`l.status IN ('agotado', 'vendido')`);
+    }
+    if (search) {
+      const op = db.usePostgres ? 'ILIKE' : 'LIKE';
+      const like = `%${escapeLike(search)}%`;
+      params.push(like, like);
+      const a = params.length - 1;
+      const b = params.length;
+      conditions.push(`(l.title ${op} $${a} ESCAPE '\\' OR l.description ${op} $${b} ESCAPE '\\')`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const r = await db.query(
+      `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
+       JOIN users u ON u.id = l.seller_id
+       ${where} ORDER BY l.created_at DESC LIMIT 200`,
+      params,
+    );
+    return res.json({
+      listings: r.rows.map(present),
+      counts: {
+        total: Number(counts.total ?? 0),
+        disponibles: Number(counts.disponibles ?? 0),
+        agotadas: Number(counts.agotadas ?? 0),
+        vendedores: Number(counts.vendedores ?? 0),
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudieron cargar las publicaciones.' });
+  }
+});
+
 // GET /api/listings/:id
 router.get('/:id', async (req, res) => {
   const id = requireIdParam(req, res);
