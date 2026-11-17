@@ -19,5 +19,8 @@
     "start": "node server.js"
   },
   "type": "commonjs",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "devDependencies": {
+    "jsdom": "^31.0.1"
+  }
 }

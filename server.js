@@ -3,6 +3,7 @@
 // Base de datos: Postgres en Railway (DATABASE_URL) o SQLite en local.
 require('dotenv').config();
 const express = require('express');
+const fs = require('fs');
 const helmet = require('helmet');
 const path = require('path');
 const db = require('./src/db');
@@ -49,7 +50,35 @@ app.use(
 app.disable('x-powered-by');
 
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Versionado de app.js y styles.css: cada despliegue cambia la
+// versión (?v=) y el teléfono ya no puede seguir usando un JS viejo
+// guardado en caché. Antes el HTML se servía tal cual y el JS con
+// "max-age=0" sin versión: una pestaña que llevaba días abierta o
+// un navegador móvil con caché agresiva seguía corriendo el código
+// de antes del arreglo. El HTML nunca se guarda (no-store), así que
+// cada visita trae la versión nueva del JS y del CSS.
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const ASSET_VERSION = (() => {
+  try {
+    const mtimes = ['app.js', 'styles.css', 'index.html'].map((f) => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs);
+    return String(Math.floor(Math.max(...mtimes) / 1000));
+  } catch (e) { return '1'; }
+})();
+function sendVersionedIndex(req, res) {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+    .replace('src="app.js"', `src="app.js?v=${ASSET_VERSION}"`)
+    .replace('href="styles.css"', `href="styles.css?v=${ASSET_VERSION}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('html').send(html);
+}
+app.get('/', sendVersionedIndex);
+app.use(express.static(PUBLIC_DIR, {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+    else res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  },
+}));
 
 // Límite general de la API (ver src/middleware/rateLimit.js).
 // /api/health queda fuera: Railway la comprueba constantemente.
@@ -70,7 +99,7 @@ app.use('/api/admin', require('./src/routes/admin'));
 // Cualquier ruta no API sirve la app.
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Ruta no encontrada.' });
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  sendVersionedIndex(req, res);
 });
 
 app.use((err, req, res, next) => {

@@ -17,6 +17,10 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 - **Reputación (0–100), solo con datos reales:** antigüedad `min(días, 90) / 90 × 20` (hasta 20 puntos) + tratos cerrados `min(cerrados, 10) / 10 × 60` (hasta 60 puntos) + fiabilidad `20` si no hay tratos cancelados, `10` menos por cada cancelado, hasta `0`. Ejemplos: usuario nuevo (0 días, 0 tratos, 0 cancelados) = 20; 10 tratos, 90 días y 0 cancelados = 100; 5 tratos, 45 días y 1 cancelado = 50.
 - **Insignias (la primera que se cumpla, en este orden):** `✓ Verificado` (dorado, solo el alias de `ADMIN_ALIAS`, el dueño del sitio) · `Top` (10 o más tratos cerrados y 90 o más días) · `Confiable` (3 o más tratos cerrados y 0 tratos cancelados) · `Nuevo` (todo lo demás). La insignia se calcula en el servidor (`src/reputation.js`) y viaja con el perfil y con cada anuncio (`seller_badge`); el cliente solo la muestra, nunca la calcula, así no hay dos versiones distintas de los umbrales.
 - **Contactar al vendedor sí abre el chat para preguntar:** sin sesión, el botón avisa en la página "Entra con tu alias para preguntar al vendedor" y lleva al registro (antes saltaba al registro sin decir nada y parecía no hacer nada); con sesión, abre la conversación, la deja seleccionada, muestra el formulario con "Pregunta por el producto, el precio, el envío…" y pone el foco en el input. Los errores al abrir el chat se ven en la página, no con `alert()`. La causa no era el servidor (POST /api/chat sí creaba la conversación): era el cliente, que disparaba dos cargas de conversaciones en paralelo sin esperar a ninguna.
+- **Error "Anuncio no válido" al contactar (corregido):** la causa real era el botón, no el servidor. En `listingCardHtml` (`public/app.js`) el botón se construía con comillas simples y `data-id="${l.id}"` quedaba en literal, sin interpolar: cada clic mandaba `listing_id: null` y el servidor devolvía 400 "Anuncio no válido". Ahora el botón usa backticks y el id llega numérico. Además `openChatForListing` valida el id en el cliente antes de llamar a la API (si no es un entero positivo, avisa en la página y no llama al servidor), y el servidor devuelve un mensaje claro y registra el cuerpo recibido si llega un id malo. Las pruebas de API no lo cazaron porque llamaban a `POST /api/chat` directamente con un id numérico; por eso existe `scripts/test-contact-click.js`, que pulsa el botón de verdad con un navegador sin interfaz (jsdom).
+- **Contacto pendiente tras entrar:** si se pulsa "Contactar al vendedor" sin haber entrado, la intención se guarda (`rd_pending_contact` en sessionStorage) y al entrar con éxito (registro o inicio de sesión) se abre automáticamente ese chat, en vez de dejar al usuario en la tienda.
+- **Chat en vivo:** el chat se refresca solo cada 5 s (lista de conversaciones y mensajes del chat abierto) y el botón Mensajes muestra un badge con el nº de conversaciones con mensajes nuevos sin leer (`GET /api/chat` trae el último mensaje de cada conversación). El refresco no roba el foco ni reinicia el scroll mientras se escribe: si no hay nada nuevo no se toca el DOM; si lo hay y se estaba abajo del todo, baja solo.
+- **Sin JS viejo en el teléfono tras cada despliegue:** `index.html` nunca se guarda en caché (`no-store`) y `app.js`/`styles.css` se sirven con versión (`?v=` según la fecha de los archivos), así que tras un despliegue el navegador pide el JS nuevo.
 - **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
 - **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
 - **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
@@ -109,6 +113,22 @@ node scripts/test-publicaciones.js
 # mostrando solo el disponible y que contactar por el agotado da
 # 409. Usa una base SQLite nueva y vacía y la borra al terminar;
 # no toca el sitio público.
+```
+
+### Pruebas locales (clic real en "Contactar al vendedor")
+
+```bash
+node scripts/test-contact-click.js
+# Reproduce el flujo del cliente con un navegador sin interfaz
+# (jsdom, dependencia de desarrollo): pulsa de verdad el botón
+# "Contactar al vendedor" en la Tienda y verifica que el POST
+# /api/chat lleva el id numérico del anuncio; que un id perdido
+# (NaN/undefined) se bloquea en el cliente sin llamar a la API;
+# que contactar sin sesión y luego entrar abre ese chat
+# automáticamente; que el JS se sirve versionado y el HTML sin
+# caché; y que el chat se actualiza en vivo con el badge de
+# mensajes nuevos. Usa una base SQLite nueva y vacía y la borra
+# al terminar; no toca el sitio público.
 ```
 
 ```bash
