@@ -137,6 +137,55 @@ $('#sell-form').addEventListener('submit', async (ev) => {
 });
 
 // ---- Mi cuenta ----
+// Monedero: saldo en USD y recargas con tarjeta. Solo usuarios
+// aprobados por el admin ven el formulario de recarga; los demás
+// ven el aviso de que necesitan aprobación.
+function walletHtml(wallet, topups) {
+  const items = topups.length ? topups.map((t) => `
+      <div class="card small"><strong>${esc(t.amount_usd)}</strong> · ${esc(t.status)} · <span class="muted small">${esc(t.created_at)}</span>
+      ${t.status === 'pendiente' ? `<br><button class="cta topup-checkout-btn" data-id="${t.id}">Pagar con tarjeta</button>` : ''}
+      </div>`).join('') : '<p class="muted small">No tienes recargas todavía.</p>';
+  return `<h3>Mi saldo</h3>
+    <div class="card small">
+      <p>Saldo: <strong class="price balance-big">${esc(wallet.balance_usd || '$0.00')}</strong> <span class="muted small">USD</span></p>
+      ${wallet.card_approved
+        ? `<div class="row">
+             <input id="topup-amount" type="number" min="5" max="500" step="0.01" placeholder="Importe en USD (5–500)" style="max-width:220px">
+             <button class="cta" id="topup-request-btn">Recargar con tarjeta</button>
+           </div>
+           <p class="muted small">Recarga de $5 a $500 con tarjeta. Queda pendiente hasta que se complete el pago o el admin la revise.</p>`
+        : `<p class="muted small">Recargar con tarjeta: solo para usuarios aprobados por el admin. Pide la aprobación al administrador para poder recargar tu saldo.</p>`}
+      <h4>Mis recargas</h4>
+      ${items}
+    </div>`;
+}
+
+// Pedir una recarga con tarjeta (solo usuarios aprobados por el admin).
+async function requestTopup() {
+  const input = $('#topup-amount');
+  const amount = Number(input && input.value);
+  if (!Number.isFinite(amount) || amount < 5 || amount > 500) {
+    alert('El importe de la recarga debe estar entre $5 y $500.');
+    return;
+  }
+  try {
+    const data = await api.call('/api/wallet/topup/request', { method: 'POST', body: JSON.stringify({ amount_usd: amount }) });
+    alert(`Recarga creada: ${data.topup.amount_usd} (pendiente). Ahora puedes pagarla con tarjeta.`);
+    loadAccount();
+  } catch (e) { alert(e.message); }
+}
+
+// Pagar una recarga pendiente con tarjeta: va a Stripe Checkout
+// (sin claves de Stripe, el servidor responde 503 y la recarga
+// queda pendiente para revisión del admin).
+async function checkoutTopup(id) {
+  try {
+    const data = await api.call(`/api/wallet/topup/${id}/checkout`, { method: 'POST', body: JSON.stringify({}) });
+    if (data.checkout_url) window.location.href = data.checkout_url;
+    else alert('No se pudo crear el pago con tarjeta.');
+  } catch (e) { alert(e.message); }
+}
+
 // El estado de custodia se muestra en cada pedido, para comprador y
 // vendedor. Solo el comprador ve el botón de confirmar recepción;
 // el vendedor NUNCA puede liberar el pago.
@@ -145,6 +194,13 @@ async function loadAccount() {
   if (!api.user) { el.innerHTML = '<p class="muted">Entra con tu alias para ver tus anuncios, compras y ventas.</p>'; return; }
   try {
     const d = await api.call('/api/orders/account');
+    let wallet = { balance_usd: '$0.00', balance_usd_cents: 0, card_approved: false };
+    let topups = [];
+    try {
+      wallet = await api.call('/api/wallet/balance');
+      const t = await api.call('/api/wallet/topups');
+      topups = t.topups || [];
+    } catch (e) { /* sin monedero, la cuenta sigue cargando */ }
     const orderCard = (o, extra = '') => `
       <div class="card small"><strong>${esc(o.listing_title || o.title)}</strong><br>
       <span class="price">${esc(o.price_display)}</span> · ${esc(o.status)}<br>
@@ -172,7 +228,8 @@ async function loadAccount() {
     const salesHtml = d.sales.length ? d.sales.map((o) => orderCard(o, o.status === 'retenido'
       ? '<br><p class="muted small">El pago está retenido en custodia. Solo el comprador puede liberarlo cuando confirme que recibió el producto.</p>'
       : '')).join('') : '<p class="muted">No has vendido nada todavía.</p>';
-    el.innerHTML = `<h3>Mis anuncios</h3>${myListingsHtml}
+    el.innerHTML = `${walletHtml(wallet, topups)}
+      <h3>Mis anuncios</h3>${myListingsHtml}
       <h3>Mis compras</h3>${purchasesHtml}
       <h3>Mis ventas</h3>${salesHtml}`;
   } catch (e) { el.innerHTML = `<p class="msg error">${esc(e.message)}</p>`; }
@@ -239,6 +296,9 @@ async function confirmReceipt(orderId) {
 }
 
 $('#account-content').addEventListener('click', (ev) => {
+  if (ev.target.closest('#topup-request-btn')) return requestTopup();
+  const checkout = ev.target.closest('.topup-checkout-btn');
+  if (checkout) return checkoutTopup(Number(checkout.dataset.id));
   const sold = ev.target.closest('.mark-sold-btn');
   if (sold) return markSold(Number(sold.dataset.id));
   const out = ev.target.closest('.mark-out-btn');
@@ -375,7 +435,7 @@ function adminLoginHtml(msg = '') {
 }
 
 function adminTabsHtml() {
-  const tabs = [['resumen', 'Resumen'], ['usuarios', 'Usuarios'], ['anuncios', 'Anuncios'], ['pedidos', 'Pedidos'], ['custodia', 'Custodia']];
+  const tabs = [['resumen', 'Resumen'], ['usuarios', 'Usuarios'], ['anuncios', 'Anuncios'], ['pedidos', 'Pedidos'], ['custodia', 'Custodia'], ['recargas', 'Recargas']];
   return `<div class="row">
     <span class="who">◆ Admin: ${esc(adminApi.user?.alias || '')}</span>
     <button id="admin-logout-btn" class="ghost">Salir del panel</button>
@@ -438,6 +498,13 @@ async function loadAdminTab() {
           <div class="stat"><strong>${Number(s.tratos_cerrados).toLocaleString('es')}</strong><span>tratos cerrados</span></div>
           <div class="stat"><strong>${Number(s.messages).toLocaleString('es')}</strong><span>mensajes enviados</span></div>
           <div class="stat"><strong>${Number(s.conversations).toLocaleString('es')}</strong><span>conversaciones</span></div>
+          <div class="stat"><strong>${Number(s.card_approved_users ?? 0).toLocaleString('es')}</strong><span>usuarios con tarjeta aprobada</span></div>
+          <div class="stat"><strong>${Number(s.topups_pendiente ?? 0).toLocaleString('es')}</strong><span>recargas pendientes</span></div>
+        </div>
+        <div class="card small" style="margin-top:16px">
+          <h3>Recargas con tarjeta</h3>
+          <p>Pendientes: <strong>${Number(s.topups_pendiente ?? 0)}</strong> · Completadas: <strong>${Number(s.topups_completado ?? 0)}</strong> · Rechazadas: <strong>${Number(s.topups_rechazado ?? 0)}</strong></p>
+          <p class="muted small">Solo los usuarios aprobados por el admin pueden recargar. La aprobación se da en la pestaña Usuarios y las recargas se revisan en la pestaña Recargas.</p>
         </div>
         <div class="card small" style="margin-top:16px">
           <h3>Custodia (escrow) en BTC</h3>
@@ -449,8 +516,11 @@ async function loadAdminTab() {
     } else if (adminTab === 'usuarios') {
       const d = await adminApi.call('/api/admin/users');
       content.innerHTML = adminTable(
-        ['#', 'Alias', 'Registrado', 'Anuncios', 'Pedidos'],
-        d.users.map((u) => [u.id, `<strong>${esc(u.alias)}</strong>`, esc(u.created_at), u.listings_count, u.orders_count]),
+        ['#', 'Alias', 'Registrado', 'Anuncios', 'Pedidos', 'Tarjeta'],
+        d.users.map((u) => [u.id, `<strong>${esc(u.alias)}</strong>`, esc(u.created_at), u.listings_count, u.orders_count,
+          u.card_approved
+            ? `<span class="muted small">Aprobada</span><br><button class="ghost admin-revoke-card" data-id="${u.id}">Quitar aprobación</button>`
+            : `<button class="cta admin-approve-card" data-id="${u.id}">Aprobar tarjeta</button>`]),
       );
     } else if (adminTab === 'anuncios') {
       const d = await adminApi.call('/api/admin/listings');
@@ -483,6 +553,19 @@ async function loadAdminTab() {
             : '<span class="muted small">—</span>',
         ]),
       ) + '<p class="muted small">Cancelar una custodia retenida devuelve la unidad al stock y el anuncio vuelve a estar disponible. Una custodia liberada ya no se puede cancelar.</p>';
+    } else if (adminTab === 'recargas') {
+      const d = await adminApi.call('/api/admin/topups');
+      content.innerHTML = adminTable(
+        ['#', 'Usuario', 'Importe', 'Estado', 'Fecha', 'Acción'],
+        d.topups.map((t) => [
+          t.id, `<strong>${esc(t.user_alias || ('#' + t.user_id))}</strong>`, esc(t.amount_usd),
+          esc(t.status), esc(t.created_at),
+          t.status === 'pendiente'
+            ? `<button class="cta admin-complete-topup" data-id="${t.id}">Completar (acreditar)</button>
+               <button class="ghost admin-reject-topup" data-id="${t.id}">Rechazar</button>`
+            : '<span class="muted small">—</span>',
+        ]),
+      ) + '<p class="muted small">Completar una recarga pendiente acredita el saldo al usuario (una sola vez). Sin claves de Stripe, esta revisión manual es la forma de cobrar la recarga.</p>';
     }
   } catch (e) {
     if (/401|403|Sesión/.test(e.message) || e.message.includes('administrador')) {
@@ -495,6 +578,41 @@ async function loadAdminTab() {
 }
 
 $('#admin-content').addEventListener('click', async (ev) => {
+  const approve = ev.target.closest('.admin-approve-card');
+  if (approve) {
+    try {
+      await adminApi.call(`/api/admin/users/${approve.dataset.id}/approve-card`, { method: 'POST', body: JSON.stringify({}) });
+      loadAdminTab();
+    } catch (e) { alert(e.message); }
+    return;
+  }
+  const revoke = ev.target.closest('.admin-revoke-card');
+  if (revoke) {
+    if (!confirm('¿Quitar la aprobación de tarjeta a este usuario? Ya no podrá pedir recargas nuevas (su saldo no cambia).')) return;
+    try {
+      await adminApi.call(`/api/admin/users/${revoke.dataset.id}/revoke-card`, { method: 'POST', body: JSON.stringify({}) });
+      loadAdminTab();
+    } catch (e) { alert(e.message); }
+    return;
+  }
+  const complete = ev.target.closest('.admin-complete-topup');
+  if (complete) {
+    if (!confirm('¿Completar esta recarga y acreditar el saldo al usuario? Solo se acredita una vez.')) return;
+    try {
+      await adminApi.call(`/api/admin/topups/${complete.dataset.id}/complete`, { method: 'POST', body: JSON.stringify({}) });
+      loadAdminTab();
+    } catch (e) { alert(e.message); }
+    return;
+  }
+  const reject = ev.target.closest('.admin-reject-topup');
+  if (reject) {
+    if (!confirm('¿Rechazar esta recarga? No se acreditará nada.')) return;
+    try {
+      await adminApi.call(`/api/admin/topups/${reject.dataset.id}/reject`, { method: 'POST', body: JSON.stringify({}) });
+      loadAdminTab();
+    } catch (e) { alert(e.message); }
+    return;
+  }
   const del = ev.target.closest('.admin-delete-listing');
   if (del) {
     if (!confirm('¿Borrar este anuncio? Solo se puede si no tiene pedidos.')) return;
