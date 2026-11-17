@@ -82,6 +82,21 @@ async function init() {
       ALTER TABLE orders ADD CONSTRAINT orders_status_check
         CHECK (status IN ('retenido', 'liberado', 'pagado_btc', 'completado', 'cancelado'));
     `);
+    // Índice único parcial: un anuncio no puede tener dos pedidos
+    // ACTIVOS a la vez. Es la última defensa contra carreras en
+    // mark-sold (dos cierres simultáneos del mismo trato). Los
+    // pedidos cancelados no cuentan, así que tras cancelar una
+    // custodia el trato se puede volver a cerrar. Si la base ya
+    // tuviera duplicados (no debería), se avisa y se sigue sin
+    // el índice en vez de tumbar el arranque.
+    try {
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_listing_active
+        ON orders (listing_id) WHERE status != 'cancelado';
+      `);
+    } catch (e) {
+      console.warn('[db] AVISO: no se pudo crear el índice único de pedidos activos:', e.message);
+    }
     console.log('[db] Postgres conectado (DATABASE_URL)');
   } else {
     const { DatabaseSync } = require('node:sqlite');
@@ -133,6 +148,8 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, created_at ASC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_listing_active
+        ON orders (listing_id) WHERE status != 'cancelado';
     `);
     console.log('[db] SQLite local (data/robin-dark.db)');
   }
