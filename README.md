@@ -6,12 +6,12 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 
 - **Registro e inicio de sesión anónimos:** solo alias + contraseña. Sin correo, sin teléfono y sin ubicación. Las contraseñas se guardan cifradas con bcrypt. No se guarda ni se muestra la ubicación de nadie.
 - **Tienda con buscador:** la búsqueda es la forma de encontrar artículos. No hay filtros ni botones de categorías en ningún lado.
-- **Publicar anuncios:** título, descripción y precio en BTC.
-- **Chat privado:** solo entre comprador y vendedor, por anuncio. El chat es solo para contactar y negociar: enviar un mensaje nunca crea un pedido, nunca marca el anuncio como vendido y nunca muestra "compra exitosa".
-- **Marcar como vendido (solo el vendedor):** cuando el trato se cierra en el chat, el vendedor marca su anuncio como vendido (en Mi cuenta o en el chat). Eso crea el pedido y el anuncio deja de verse en la tienda.
+- **Publicar anuncios:** título, descripción, precio en BTC y **cantidad en stock** (por defecto 1). Un anuncio NO es de una sola unidad: se vende unidad a unidad hasta agotar el stock.
+- **Chat privado:** solo entre comprador y vendedor, por anuncio. El chat es solo para contactar y negociar: enviar un mensaje nunca crea un pedido, nunca marca el anuncio como vendido y nunca muestra "compra exitosa". Un artículo agotado no admite tratos nuevos.
+- **Marcar como vendido (solo el vendedor):** cuando el trato se cierra en el chat, el vendedor marca su anuncio como vendido (en Mi cuenta o en el chat). Eso crea el pedido y **descuenta 1 unidad del stock**. El anuncio sigue en la tienda mientras queden unidades y solo se agota cuando el stock llega a 0. La única otra forma de que se acabe es que el vendedor lo dé por agotado, con el botón "Marcar como agotado" en Mi cuenta; con "Reponer stock" vuelve a estar disponible con la cantidad que indique.
 - **Custodia (escrow) en BTC:** al marcar como vendido, el pago queda RETENIDO en custodia (estado: `retenido`). Solo el COMPRADOR puede liberarlo, con el botón "Confirmar que recibí el producto" (en Mi cuenta o en el chat), y solo entonces el pago pasa a `liberado` para el vendedor. El vendedor NO puede liberar el pago él mismo. El estado de custodia se ve en el pedido, en Mi cuenta (comprador y vendedor) y en el chat.
 - **Estadísticas públicas:** en la portada se ven los conteos en vivo de la base de datos — usuarios registrados, anuncios publicados, tratos cerrados y mensajes enviados — desde el endpoint público `GET /api/stats`, que devuelve solo números, ningún dato personal.
-- **Panel de administrador:** botón "Admin" en la barra superior. Entra solo el dueño del sitio, con alias y contraseña aparte de los usuarios anónimos (variables `ADMIN_ALIAS` y `ADMIN_PASSWORD`); sin esas variables, el login de admin no funciona, porque no hay ninguna contraseña por defecto en el código. El panel muestra los conteos, todos los usuarios (alias y fecha, nunca contraseñas), todos los anuncios, todos los pedidos y todas las custodias con su estado. El admin puede borrar un anuncio sin pedidos y cancelar una custodia retenida (el pedido pasa a cancelado y el anuncio vuelve a estar disponible). Los usuarios normales reciben 403 en `/api/admin/*`.
+- **Panel de administrador:** botón "Admin" en la barra superior. Entra solo el dueño del sitio, con alias y contraseña aparte de los usuarios anónimos (variables `ADMIN_ALIAS` y `ADMIN_PASSWORD`); sin esas variables, el login de admin no funciona, porque no hay ninguna contraseña por defecto en el código. El panel muestra los conteos, todos los usuarios (alias y fecha, nunca contraseñas), todos los anuncios (con su stock), todos los pedidos y todas las custodias con su estado. El admin puede borrar un anuncio sin pedidos y cancelar una custodia retenida (el pedido pasa a cancelado y la unidad vuelve al stock, con el anuncio disponible). Los usuarios normales reciben 403 en `/api/admin/*`.
 - **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
 - **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
 - **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
@@ -35,8 +35,8 @@ robin-dark-js/
 │   └── routes/
 │       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
 │       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
-│       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar)
-│       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
+│       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar con stock) · POST /api/listings/:id/mark-out-of-stock · POST /api/listings/:id/restock
+│       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación; descuenta 1 de stock) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
 │       ├── stats.js        # GET /api/stats (conteos públicos: usuarios, anuncios, tratos cerrados, mensajes)
 │       └── chat.js         # GET/POST /api/chat y /api/chat/:id/messages (enviar un mensaje nunca vende)
 └── public/
@@ -50,7 +50,7 @@ robin-dark-js/
 | Tabla | Guarda |
 |---|---|
 | `users` | alias, contraseña cifrada, fecha de creación |
-| `listings` | vendedor, título, descripción, `price_sats`, estado (disponible/vendido) |
+| `listings` | vendedor, título, descripción, `price_sats`, `stock` (unidades que quedan, por defecto 1), estado (disponible/agotado; `vendido` es antiguo) |
 | `orders` | anuncio, comprador, vendedor, `price_sats`, estado de custodia (`retenido` → `liberado`; `pagado_btc`/`completado` son estados antiguos) |
 | `conversations` | anuncio, comprador, vendedor (única por los tres) |
 | `messages` | conversación, remitente, texto |
@@ -131,8 +131,8 @@ npm start
 - **JWT_SECRET obligatorio en producción:** si `DATABASE_URL` está puesto (Railway) y `JWT_SECRET` falta o tiene menos de 32 caracteres, el servidor NO arranca. Ya no hay secreto por defecto en el código.
 - **Límites de velocidad:** login/registro 10 intentos por IP cada 15 min; login de admin 5 intentos por IP cada 15 min; API en general 300 peticiones por IP cada 15 min. El login con alias inexistente tarda lo mismo que con alias existente (comparación bcrypt falsa) para no filtrar qué alias existen.
 - **Cabeceras de seguridad (helmet):** Content-Security-Policy estricta (solo recursos del propio sitio), no se puede meter la tienda en un iframe de otra web, nosniff y HSTS.
-- **Escrow sin carreras:** marcar como vendido y liberar/cancelar la custodia usan actualizaciones atómicas (`UPDATE ... WHERE status=...`) y un índice único parcial en `orders(listing_id)` para pedidos no cancelados, así que dos cierres simultáneos del mismo trato no pueden crear dos pedidos. Para cerrar un trato tiene que haber al menos un mensaje en el chat.
-- **Validación de entradas:** IDs numéricos, cuerpos JSON que sean objetos, búsqueda limitada a 100 caracteres con comodines `%`/`_` escapados, precio máximo de 21.000.000 BTC y satoshis como entero seguro.
+- **Escrow sin carreras:** marcar como vendido y liberar/cancelar la custodia usan actualizaciones atómicas (`UPDATE ... WHERE status=...`). Al vender, el stock se descuenta de forma atómica (`UPDATE ... SET stock = stock - 1 WHERE status='disponible' AND stock > 0`): dos ventas a la vez de la última unidad no pueden crear dos pedidos ni dejar el stock en negativo. Un mismo anuncio puede tener muchos pedidos, uno por unidad vendida; por eso se eliminó el índice único de un pedido por anuncio. Para cerrar un trato tiene que haber al menos un mensaje en el chat.
+- **Validación de entradas:** IDs numéricos, cuerpos JSON que sean objetos, búsqueda limitada a 100 caracteres con comodines `%`/`_` escapados, precio máximo de 21.000.000 BTC y satoshis como entero seguro, stock entero entre 1 y 10.000.
 - **Sin inyección SQL:** todas las consultas usan parámetros (`$1`, `$2`…); la búsqueda usa `LIKE` parametrizado con `ESCAPE`.
 - **Sin XSS en la interfaz:** todos los datos de usuarios (alias, títulos, descripciones, mensajes) se escapan antes de insertarlos en el HTML.
 - **Autorización:** cada chat, pedido y anuncio se comprueba contra el usuario del token (nadie ve el chat de otro, nadie marca vendido el anuncio de otro, solo el comprador libera su custodia, solo el vendedor la marca). El panel de admin exige JWT con `role: 'admin'`; un usuario normal recibe 403. El admin nunca se hace pasar por un usuario en el chat.
