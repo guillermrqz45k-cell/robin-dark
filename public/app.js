@@ -88,7 +88,7 @@ async function loadListings() {
         <h3>${esc(l.title)}</h3>
         <p class="muted">${esc(l.description || '')}</p>
         <p class="price">${esc(l.price_display)}</p>
-        <p class="muted small">Vendedor: ${esc(l.seller_alias)} · Pagos solo en BTC</p>
+        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: ${esc(l.seller_alias)} · Pagos solo en BTC</p>
         <div class="row">
           ${l.seller_id === api.user?.id
             ? '<span class="muted small">Es tu anuncio. El trato se cierra en el chat y solo tú puedes marcarlo como vendido.</span>'
@@ -128,9 +128,9 @@ $('#sell-form').addEventListener('submit', async (ev) => {
   try {
     const data = await api.call('/api/listings', {
       method: 'POST',
-      body: JSON.stringify({ title: fd.get('title'), description: fd.get('description'), price_btc: fd.get('price_btc') }),
+      body: JSON.stringify({ title: fd.get('title'), description: fd.get('description'), price_btc: fd.get('price_btc'), stock: fd.get('stock') }),
     });
-    msg.textContent = `Publicado: ${data.listing.title} por ${data.listing.price_display}.`;
+    msg.textContent = `Publicado: ${data.listing.title} por ${data.listing.price_display} · Stock: ${data.listing.stock_label}.`;
     msg.className = 'msg ok';
     ev.target.reset(); loadListings(); loadStats();
   } catch (e) { msg.textContent = e.message; msg.className = 'msg error'; }
@@ -153,11 +153,17 @@ async function loadAccount() {
       ${extra}</div>`;
     const myListingsHtml = d.listings.length ? d.listings.map((o) => `
       <div class="card small"><strong>${esc(o.title)}</strong><br>
-      <span class="price">${esc(o.price_display)}</span> · ${esc(o.status)}<br>
+      <span class="price">${esc(o.price_display)}</span> · ${esc(o.status)} · Stock: <strong>${esc(o.stock_label || (o.stock ?? 1) + ' unidades')}</strong><br>
       ${o.status === 'disponible'
         ? `<button class="cta mark-sold-btn" data-id="${o.id}">Marcar como vendido</button>
-           <p class="muted small">Solo tú, el vendedor, puedes marcarlo, cuando cierres el trato en el chat.</p>`
-        : '<p class="muted small">Vendido. El pago queda en custodia hasta que el comprador confirme que recibió el producto.</p>'}
+           <button class="ghost mark-out-btn" data-id="${o.id}">Marcar como agotado</button>
+           <button class="ghost restock-btn" data-id="${o.id}">Reponer stock</button>
+           <p class="muted small">Solo tú, el vendedor, puedes marcarlo, cuando cierres el trato en el chat. Cada venta descuenta 1 unidad: el anuncio sigue en la tienda hasta que se agote el stock o tú lo des por agotado.</p>`
+        : o.status === 'agotado'
+          ? `<button class="cta restock-btn" data-id="${o.id}">Reponer stock</button>
+             <p class="muted small">Agotado. Nadie puede contactarte por este anuncio hasta que repongas stock.</p>`
+          : `<button class="cta restock-btn" data-id="${o.id}">Reponer stock</button>
+             <p class="muted small">Vendido (anuncio antiguo). Repón el stock para volver a venderlo.</p>`}
       </div>`).join('') : '<p class="muted">No has publicado nada todavía.</p>';
     const purchasesHtml = d.purchases.length ? d.purchases.map((o) => orderCard(o, o.status === 'retenido'
       ? `<br><button class="cta confirm-receipt-btn" data-id="${o.id}">Confirmar que recibí el producto</button>
@@ -187,8 +193,38 @@ async function markSold(listingId, buyer) {
   if (!confirm('¿Marcar este anuncio como vendido? El pago en BTC quedará retenido en custodia hasta que el comprador confirme que recibió el producto.')) return;
   try {
     const data = await api.call('/api/orders/mark-sold', { method: 'POST', body: JSON.stringify(body) });
-    alert(`Anuncio marcado como vendido. Pago retenido en custodia: ${data.order.price_display}. Se libera cuando el comprador confirme que recibió el producto.`);
+    const left = data.listing
+      ? (data.listing.status === 'agotado'
+        ? ' Era la última unidad: el artículo se agotó.'
+        : ` Quedan ${data.listing.stock} ${data.listing.stock === 1 ? 'unidad' : 'unidades'} de este artículo.`)
+      : '';
+    alert(`Anuncio marcado como vendido. Pago retenido en custodia: ${data.order.price_display}.${left} Se libera cuando el comprador confirme que recibió el producto.`);
     loadAccount(); loadListings(); loadStats(); if (currentConv) loadMessages(currentConv);
+  } catch (e) { alert(e.message); }
+}
+
+// Marcar como agotado: solo el vendedor. Es, junto con que el
+// stock llegue a 0, la única forma de que se acabe un artículo.
+async function markOutOfStock(listingId) {
+  if (!confirm('¿Dar este artículo por agotado? Dejará de verse en la tienda y nadie nuevo podrá contactarte por él. Puedes reponer el stock cuando quieras.')) return;
+  try {
+    await api.call(`/api/listings/${listingId}/mark-out-of-stock`, { method: 'POST', body: JSON.stringify({}) });
+    alert('Anuncio marcado como agotado.');
+    loadAccount(); loadListings(); loadStats();
+  } catch (e) { alert(e.message); }
+}
+
+// Reponer stock: solo el vendedor. Vuelve a poner en venta un
+// anuncio agotado con la cantidad que indique.
+async function restock(listingId) {
+  const qty = prompt('¿Cuántas unidades quieres poner en stock?');
+  if (qty === null) return;
+  const stock = Number(qty);
+  if (!Number.isInteger(stock) || stock < 1) { alert('La cantidad tiene que ser un número entero mayor que 0.'); return; }
+  try {
+    const data = await api.call(`/api/listings/${listingId}/restock`, { method: 'POST', body: JSON.stringify({ stock }) });
+    alert(`Stock repuesto: ${data.listing.stock_label}. El anuncio vuelve a estar disponible.`);
+    loadAccount(); loadListings(); loadStats();
   } catch (e) { alert(e.message); }
 }
 
@@ -205,6 +241,10 @@ async function confirmReceipt(orderId) {
 $('#account-content').addEventListener('click', (ev) => {
   const sold = ev.target.closest('.mark-sold-btn');
   if (sold) return markSold(Number(sold.dataset.id));
+  const out = ev.target.closest('.mark-out-btn');
+  if (out) return markOutOfStock(Number(out.dataset.id));
+  const restockBtn = ev.target.closest('.restock-btn');
+  if (restockBtn) return restock(Number(restockBtn.dataset.id));
   const conf = ev.target.closest('.confirm-receipt-btn');
   if (conf) return confirmReceipt(Number(conf.dataset.id));
 });
@@ -253,12 +293,14 @@ async function loadMessages(id) {
       }
     } else {
       escrowEl.hidden = true;
-      // Sin pedido aún: solo el vendedor puede marcarlo como vendido
-      // cuando cierre el trato en este chat.
-      if (d.listing && d.listing.status === 'disponible' && d.conversation.seller_id === api.user.id) {
-        soldBtn.hidden = false; actionsEl.hidden = false;
-        soldBtn.onclick = () => markSold(d.listing.id, { id: d.conversation.buyer_id });
-      }
+    }
+    // El vendedor puede marcarlo como vendido en este chat aunque
+    // ya haya un pedido con este comprador: con stock, el mismo
+    // comprador puede comprar otra unidad. Solo vale si el anuncio
+    // sigue disponible (con stock).
+    if (d.listing && d.listing.status === 'disponible' && d.conversation.seller_id === api.user.id) {
+      soldBtn.hidden = false; actionsEl.hidden = false;
+      soldBtn.onclick = () => markSold(d.listing.id, { id: d.conversation.buyer_id });
     }
     $('#chat-messages').innerHTML = d.messages.map((m) => `
       <div class="bubble ${m.sender_id === api.user.id ? 'mine' : ''}">
@@ -402,7 +444,7 @@ async function loadAdminTab() {
           <p>Retenido: <strong class="price">${Number(s.escrows.retenido)} pedido(s) · ₿ ${esc(s.escrows.retenido_btc)}</strong></p>
           <p>Liberado: <strong>${Number(s.escrows.liberado)} pedido(s) · ₿ ${esc(s.escrows.liberado_btc)}</strong></p>
           <p>Cancelado: <strong>${Number(s.escrows.cancelado)} pedido(s)</strong></p>
-          <p class="muted small">Anuncios disponibles: ${Number(s.listings_disponible)} · Vendidos: ${Number(s.listings_vendido)}</p>
+          <p class="muted small">Anuncios disponibles: ${Number(s.listings_disponible)} · Agotados: ${Number(s.listings_agotado ?? 0)} · Vendidos: ${Number(s.listings_vendido)}</p>
         </div>`;
     } else if (adminTab === 'usuarios') {
       const d = await adminApi.call('/api/admin/users');
@@ -413,10 +455,10 @@ async function loadAdminTab() {
     } else if (adminTab === 'anuncios') {
       const d = await adminApi.call('/api/admin/listings');
       content.innerHTML = adminTable(
-        ['#', 'Título', 'Vendedor', 'Precio', 'Estado', 'Publicado', 'Acción'],
+        ['#', 'Título', 'Vendedor', 'Precio', 'Stock', 'Estado', 'Publicado', 'Acción'],
         d.listings.map((l) => [
           l.id, `<strong>${esc(l.title)}</strong><br><span class="muted small">${esc(l.description || '')}</span>`,
-          esc(l.seller_alias), esc(l.price_display), esc(l.status), esc(l.created_at),
+          esc(l.seller_alias), esc(l.price_display), Number(l.stock ?? 1), esc(l.status), esc(l.created_at),
           `<button class="ghost admin-delete-listing" data-id="${l.id}">Borrar</button>`,
         ]),
       );
@@ -440,7 +482,7 @@ async function loadAdminTab() {
             ? `<button class="ghost admin-cancel-escrow" data-id="${o.id}">Cancelar custodia</button>`
             : '<span class="muted small">—</span>',
         ]),
-      ) + '<p class="muted small">Cancelar una custodia retenida devuelve el anuncio a disponible. Una custodia liberada ya no se puede cancelar.</p>';
+      ) + '<p class="muted small">Cancelar una custodia retenida devuelve la unidad al stock y el anuncio vuelve a estar disponible. Una custodia liberada ya no se puede cancelar.</p>';
     }
   } catch (e) {
     if (/401|403|Sesión/.test(e.message) || e.message.includes('administrador')) {
