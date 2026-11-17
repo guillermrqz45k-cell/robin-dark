@@ -5,8 +5,29 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
+const { rankInfo, effectiveVerified } = require('../reputation');
 
 const router = express.Router();
+
+// Rango y verificación de quien envía un mensaje: se calculan en
+// el servidor y viajan con cada mensaje, para mostrar las letras
+// y el ✓ Verificado junto al alias en el chat.
+function presentMessage(row) {
+  const info = rankInfo({ rank: row.sender_rank, alias: row.sender_alias });
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    sender_id: row.sender_id,
+    sender_alias: row.sender_alias,
+    sender_rank: info.rank,
+    sender_rank_letter: info.rank_letter,
+    sender_rank_label: info.rank_label,
+    sender_rank_badges: info.rank_badges,
+    sender_verified: effectiveVerified({ verified: row.sender_verified, alias: row.sender_alias }),
+    body: row.body,
+    created_at: row.created_at,
+  };
+}
 
 // GET /api/chat — mis conversaciones. Cada una trae su último
 // mensaje (id y quién lo envió) para que el cliente pueda avisar
@@ -95,7 +116,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       [conv.listing_id, conv.buyer_id, conv.seller_id],
     );
     const r = await db.query(
-      `SELECT m.*, u.alias AS sender_alias FROM messages m
+      `SELECT m.*, u.alias AS sender_alias, u.rank AS sender_rank, u.verified AS sender_verified FROM messages m
        JOIN users u ON u.id = m.sender_id
        WHERE m.conversation_id = $1 ORDER BY m.created_at ASC, m.id ASC`,
       [conv.id],
@@ -106,7 +127,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       // Custodia: null si aún no hay pedido; si lo hay, su estado
       // (retenido / liberado) se muestra en el chat.
       order: order ? { id: order.id, status: order.status, buyer_id: order.buyer_id, seller_id: order.seller_id, price_sats: Number(order.price_sats) } : null,
-      messages: r.rows,
+      messages: r.rows.map(presentMessage),
     });
   } catch (e) {
     console.error(e);
@@ -134,7 +155,14 @@ router.post('/:id/messages', requireAuth, requireObjectBody, async (req, res) =>
        VALUES ($1, $2, $3) RETURNING id, conversation_id, sender_id, body, created_at`,
       [conv.id, req.user.id, body],
     );
-    return res.status(201).json({ message: { ...created.rows[0], sender_alias: req.user.alias } });
+    const sender = await db.get('SELECT alias, rank, verified FROM users WHERE id = $1', [req.user.id]);
+    const row = {
+      ...created.rows[0],
+      sender_alias: sender ? sender.alias : req.user.alias,
+      sender_rank: sender ? sender.rank : 'new',
+      sender_verified: sender ? sender.verified : false,
+    };
+    return res.status(201).json({ message: presentMessage(row) });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo enviar el mensaje.' });
