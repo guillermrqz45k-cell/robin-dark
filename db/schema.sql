@@ -13,6 +13,13 @@ CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   alias TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  -- Rango con letras: admin / moderator / veteran / new ('new' por
+  -- defecto al registrarse). El alias de ADMIN_ALIAS siempre es
+  -- admin, aunque el campo diga otra cosa.
+  rank TEXT NOT NULL DEFAULT 'new' CHECK (rank IN ('admin', 'moderator', 'veteran', 'new')),
+  -- Verificación: el admin verifica usuarios desde el panel.
+  -- El alias de ADMIN_ALIAS siempre se muestra verificado.
+  verified BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
