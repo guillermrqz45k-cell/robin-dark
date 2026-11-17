@@ -12,6 +12,10 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 - **Custodia (escrow) en BTC:** al marcar como vendido, el pago queda RETENIDO en custodia (estado: `retenido`). Solo el COMPRADOR puede liberarlo, con el botón "Confirmar que recibí el producto" (en Mi cuenta o en el chat), y solo entonces el pago pasa a `liberado` para el vendedor. El vendedor NO puede liberar el pago él mismo. El estado de custodia se ve en el pedido, en Mi cuenta (comprador y vendedor) y en el chat.
 - **Estadísticas públicas:** en la portada se ven los conteos en vivo de la base de datos — usuarios registrados, anuncios publicados, tratos cerrados y mensajes enviados — desde el endpoint público `GET /api/stats`, que devuelve solo números, ningún dato personal.
 - **Panel de administrador:** botón "Admin" en la barra superior. Entra solo el dueño del sitio, con alias y contraseña aparte de los usuarios anónimos (variables `ADMIN_ALIAS` y `ADMIN_PASSWORD`); sin esas variables, el login de admin no funciona, porque no hay ninguna contraseña por defecto en el código. El panel muestra los conteos, todos los usuarios (alias y fecha, nunca contraseñas), todos los anuncios (con su stock), todos los pedidos y todas las custodias con su estado. El admin puede borrar un anuncio sin pedidos y cancelar una custodia retenida (el pedido pasa a cancelado y la unidad vuelve al stock, con el anuncio disponible). Los usuarios normales reciben 403 en `/api/admin/*`.
+- **Perfil público y reputación:** el alias de cualquier vendedor es clicable en la tienda y en el chat, y abre su perfil público (`GET /api/users/:alias/profile`, sin token, sin `password_hash` ni datos privados): miembro desde, anuncios activos (clicables), tratos cerrados como vendedor y como comprador, tratos cancelados, tiempo medio de respuesta y puntuación de reputación 0–100. El tiempo de respuesta es la **mediana** del tiempo entre un mensaje recibido y la respuesta de ese usuario en el mismo chat; si no hay ningún par mensaje/respuesta, muestra "Sin datos". No hay estrellas ni valoraciones inventadas: todo sale de la base de datos.
+- **Reputación (0–100), solo con datos reales:** antigüedad `min(días, 90) / 90 × 20` (hasta 20 puntos) + tratos cerrados `min(cerrados, 10) / 10 × 60` (hasta 60 puntos) + fiabilidad `20` si no hay tratos cancelados, `10` menos por cada cancelado, hasta `0`. Ejemplos: usuario nuevo (0 días, 0 tratos, 0 cancelados) = 20; 10 tratos, 90 días y 0 cancelados = 100; 5 tratos, 45 días y 1 cancelado = 50.
+- **Insignias (la primera que se cumpla, en este orden):** `✓ Verificado` (dorado, solo el alias de `ADMIN_ALIAS`, el dueño del sitio) · `Top` (10 o más tratos cerrados y 90 o más días) · `Confiable` (3 o más tratos cerrados y 0 tratos cancelados) · `Nuevo` (todo lo demás). La insignia se calcula en el servidor (`src/reputation.js`) y viaja con el perfil y con cada anuncio (`seller_badge`); el cliente solo la muestra, nunca la calcula, así no hay dos versiones distintas de los umbrales.
+- **Contactar al vendedor sí abre el chat para preguntar:** sin sesión, el botón avisa en la página "Entra con tu alias para preguntar al vendedor" y lleva al registro (antes saltaba al registro sin decir nada y parecía no hacer nada); con sesión, abre la conversación, la deja seleccionada, muestra el formulario con "Pregunta por el producto, el precio, el envío…" y pone el foco en el input. Los errores al abrir el chat se ven en la página, no con `alert()`. La causa no era el servidor (POST /api/chat sí creaba la conversación): era el cliente, que disparaba dos cargas de conversaciones en paralelo sin esperar a ninguna.
 - **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
 - **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
 - **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
@@ -30,11 +34,13 @@ robin-dark-js/
 ├── src/
 │   ├── db.js               # Postgres (DATABASE_URL) o SQLite local (node:sqlite)
 │   ├── auth.js             # hash bcrypt + JWT
+│   ├── reputation.js       # reputación 0–100 e insignias (solo datos reales)
 │   ├── middleware/
 │   │   └── auth.js         # requireAuth (Bearer JWT) y requireAdmin (JWT con role: 'admin')
 │   └── routes/
 │       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
 │       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
+│       ├── users.js        # GET /api/users/:alias/profile (público: perfil, reputación, insignia, tiempo de respuesta)
 │       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar con stock) · POST /api/listings/:id/mark-out-of-stock · POST /api/listings/:id/restock
 │       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación; descuenta 1 de stock) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
 │       ├── stats.js        # GET /api/stats (conteos públicos: usuarios, anuncios, tratos cerrados, mensajes)
@@ -70,6 +76,26 @@ npm start
 Sin `DATABASE_URL`, usa SQLite en `data/robin-dark.db` (se crea sola). Para probar con Postgres en local, pon `DATABASE_URL=postgres://usuario:clave@localhost:5432/robin_dark` en `.env`.
 
 ### Probar la API con curl
+
+```bash
+# Perfil público de un vendedor (sin token)
+curl http://localhost:3000/api/users/vendedor1/profile
+# {"alias":"vendedor1","member_since":"...","member_days":0,"is_admin":false,
+#  "badge":{"key":"nuevo","label":"Nuevo"},"reputation":20,
+#  "active_listings_count":1,"active_listings":[...],
+#  "closed_as_seller":0,"closed_as_buyer":0,"closed_total":0,"cancelled":0,
+#  "response_minutes":null,"response_time":"Sin datos"}
+```
+
+### Pruebas locales (perfil, reputación, insignias y contacto)
+
+```bash
+node scripts/test-profile.js
+# 60 pruebas: perfil público, reputación, insignias (Nuevo/Confiable/
+# Top/Verificado), tiempo de respuesta, contacto y chat, venta con
+# custodia y cancelación. Usa una base SQLite nueva y vacía y la
+# borra al terminar; no toca el sitio público.
+```
 
 ```bash
 # Salud
@@ -134,6 +160,7 @@ npm start
 - **Escrow sin carreras:** marcar como vendido y liberar/cancelar la custodia usan actualizaciones atómicas (`UPDATE ... WHERE status=...`). Al vender, el stock se descuenta de forma atómica (`UPDATE ... SET stock = stock - 1 WHERE status='disponible' AND stock > 0`): dos ventas a la vez de la última unidad no pueden crear dos pedidos ni dejar el stock en negativo. Un mismo anuncio puede tener muchos pedidos, uno por unidad vendida; por eso se eliminó el índice único de un pedido por anuncio. Para cerrar un trato tiene que haber al menos un mensaje en el chat.
 - **Validación de entradas:** IDs numéricos, cuerpos JSON que sean objetos, búsqueda limitada a 100 caracteres con comodines `%`/`_` escapados, precio máximo de 21.000.000 BTC y satoshis como entero seguro, stock entero entre 1 y 10.000.
 - **Sin inyección SQL:** todas las consultas usan parámetros (`$1`, `$2`…); la búsqueda usa `LIKE` parametrizado con `ESCAPE`.
+- **Marcadores repetidos en SQLite:** un mismo `$N` usado dos veces en una consulta (por ejemplo `WHERE buyer_id = $1 OR seller_id = $1`) se convierte en dos `?` y `node:sqlite` pone el segundo en `NULL` sin avisar: el vendedor no veía sus conversaciones, la búsqueda por descripción no encontraba nada y el tiempo de respuesta del vendedor salía vacío en local. En `src/db.js` cada aparición del marcador recibe ahora su propio valor duplicado. En Postgres no hacía falta (reutiliza el parámetro), pero la corrección vale para los dos motores.
 - **Sin XSS en la interfaz:** todos los datos de usuarios (alias, títulos, descripciones, mensajes) se escapan antes de insertarlos en el HTML.
 - **Autorización:** cada chat, pedido y anuncio se comprueba contra el usuario del token (nadie ve el chat de otro, nadie marca vendido el anuncio de otro, solo el comprador libera su custodia, solo el vendedor la marca). El panel de admin exige JWT con `role: 'admin'`; un usuario normal recibe 403. El admin nunca se hace pasar por un usuario en el chat.
 - El panel de admin usa un JWT aparte con `role: 'admin'`; las credenciales de admin viven solo en variables de entorno y no hay ninguna contraseña por defecto en el código.
