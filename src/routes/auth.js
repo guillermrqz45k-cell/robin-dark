@@ -84,8 +84,15 @@ router.post('/login', authLimiter, requireObjectBody, async (req, res) => {
   }
 });
 
-router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: { id: req.user.id, alias: req.user.alias } });
+router.get('/me', requireAuth, async (req, res) => {
+  const user = await db.get('SELECT card_approved FROM users WHERE id = $1', [req.user.id]);
+  res.json({
+    user: {
+      id: req.user.id,
+      alias: req.user.alias,
+      card_approved: Boolean(user && (user.card_approved === true || user.card_approved === 1)),
+    },
+  });
 });
 
 module.exports = router;
