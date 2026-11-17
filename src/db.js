@@ -46,6 +46,14 @@ async function init() {
         id SERIAL PRIMARY KEY,
         alias TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
+        -- Rango con letras: admin / moderator / veteran / new.
+        -- 'new' es el rango por defecto al registrarse. El alias de
+        -- ADMIN_ALIAS siempre es admin, aunque el campo diga otra
+        -- cosa (eso se resuelve en src/reputation.js, no aquí).
+        rank TEXT NOT NULL DEFAULT 'new' CHECK (rank IN ('admin', 'moderator', 'veteran', 'new')),
+        -- Verificación: el admin verifica usuarios desde el panel.
+        -- El alias de ADMIN_ALIAS siempre se muestra verificado.
+        verified BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS listings (
@@ -92,6 +100,18 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, created_at ASC);
     `);
+    // Migración rangos + verificación (2026-11-17): las bases ya
+    // creadas (Railway) no tienen rank ni verified. Se añaden sin
+    // borrar nada: todos los usuarios existentes quedan como 'new'
+    // y sin verificar, que es lo que eran antes.
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank TEXT NOT NULL DEFAULT 'new';`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;`);
+    try {
+      await pool.query(`ALTER TABLE users ADD CONSTRAINT users_rank_check CHECK (rank IN ('admin', 'moderator', 'veteran', 'new'));`);
+    } catch (e) {
+      if (!/already exists/i.test(e.message || '')) throw e;
+    }
+    await pool.query(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
     // Migración stock (2026-11-16): un anuncio ya no es de una sola
     // unidad. Bases ya creadas (Railway) no tienen la columna stock
     // ni el estado 'agotado' en el CHECK. Se añaden sin borrar nada:
@@ -139,6 +159,8 @@ async function init() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         alias TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
+        rank TEXT NOT NULL DEFAULT 'new' CHECK (rank IN ('admin', 'moderator', 'veteran', 'new')),
+        verified INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS listings (
@@ -180,6 +202,17 @@ async function init() {
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, created_at ASC);
     `);
+    // Migración rangos + verificación en SQLite (bases locales ya
+    // creadas): si la tabla users aún no tiene rank o verified, se
+    // añaden (todos quedan como 'new' y sin verificar).
+    const userCols = sqlite.prepare(`PRAGMA table_info(users)`).all();
+    if (!userCols.some((c) => c.name === 'rank')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN rank TEXT NOT NULL DEFAULT 'new' CHECK (rank IN ('admin', 'moderator', 'veteran', 'new'));`);
+    }
+    if (!userCols.some((c) => c.name === 'verified')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;`);
+    }
+    sqlite.exec(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
     // Migración stock en SQLite (bases locales ya creadas):
     // - Se elimina el índice único parcial de pedidos por anuncio.
     // - Si la tabla listings aún no tiene la columna stock, se añade
