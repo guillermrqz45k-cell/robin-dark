@@ -125,7 +125,7 @@ function renderAuthArea() {
   const area = $('#auth-area');
   if (api.user) {
     area.innerHTML = `<span class="who">◆ ${esc(api.user.alias)}</span> <button id="logout-btn" class="ghost">Salir</button>`;
-    $('#logout-btn').addEventListener('click', () => { api.logout(); renderAuthArea(); showView('shop'); loadListings(); });
+    $('#logout-btn').addEventListener('click', () => { api.logout(); clearPendingContact(); renderAuthArea(); showView('shop'); loadListings(); });
   } else {
     area.innerHTML = `<button id="enter-btn" class="cta">Entrar / Crear cuenta</button>`;
     $('#enter-btn').addEventListener('click', () => showView('auth'));
@@ -170,7 +170,7 @@ function listingCardHtml(l) {
             ? '<span class="muted small">Agotado. Nadie puede contactar por este anuncio hasta que el vendedor reponga stock.</span>'
             : l.seller_id === api.user?.id
               ? '<span class="muted small">Es tu anuncio. El trato se cierra en el chat y solo tú puedes marcarlo como vendido.</span>'
-              : '<button class="cta contact-btn" data-id="${l.id}">Contactar al vendedor</button>'}
+              : `<button class="cta contact-btn" data-id="${l.id}">Contactar al vendedor</button>`}
         </div>
         <p class="muted small">El chat es solo para contactar y negociar. No hay compra automática: nada se vende por enviar un mensaje.</p>
       </article>`;
@@ -261,8 +261,34 @@ listingsEl.addEventListener('click', async (ev) => {
 //     formulario queda con el foco en el input.
 //  3. Los errores solo salían con alert(). Ahora se ven en la
 //     página, en #shop-msg.
+// El id del anuncio que el usuario quiso contactar antes de entrar:
+// se guarda en sessionStorage (solo vive en esta pestaña) y al entrar
+// con éxito se abre ese chat automáticamente. Antes se perdía: el
+// usuario entraba y caía en la tienda sin que se abriera nada.
+const PENDING_CONTACT_KEY = 'rd_pending_contact';
+function getPendingContact() {
+  const n = Number(sessionStorage.getItem(PENDING_CONTACT_KEY));
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+function setPendingContact(id) {
+  if (Number.isInteger(id) && id > 0) sessionStorage.setItem(PENDING_CONTACT_KEY, String(id));
+}
+function clearPendingContact() { sessionStorage.removeItem(PENDING_CONTACT_KEY); }
+
 async function openChatForListing(id) {
+  // El id tiene que ser un entero positivo ANTES de llamar a la API:
+  // si llega NaN (por ejemplo, un data-id sin interpolar), no se
+  // llama al servidor y se avisa en la página. Antes el NaN viajaba
+  // como listing_id null y el servidor devolvía "Anuncio no válido".
+  const listingId = Number(id);
+  if (!Number.isInteger(listingId) || listingId <= 0) {
+    const msg = 'No se pudo abrir el chat: el anuncio no es válido. Recarga la página e inténtalo de nuevo.';
+    showShopMsg(msg, 'error');
+    if (!$('#view-publicaciones').hidden) showPubMsg(msg, 'error');
+    return;
+  }
   if (!api.user) {
+    setPendingContact(listingId);
     const notice = $('#auth-notice');
     if (notice) { notice.textContent = 'Entra con tu alias para preguntar al vendedor.'; notice.className = 'msg ok'; }
     showView('auth');
@@ -272,7 +298,7 @@ async function openChatForListing(id) {
   }
   showShopMsg('');
   try {
-    const data = await api.call('/api/chat', { method: 'POST', body: JSON.stringify({ listing_id: id }) });
+    const data = await api.call('/api/chat', { method: 'POST', body: JSON.stringify({ listing_id: listingId }) });
     currentConv = data.conversation.id;
     showView('chat', { skipLoad: true });
     await loadConversations();
@@ -426,6 +452,51 @@ function showChatError(text) {
   el.hidden = !text;
 }
 
+// ---- Chat en vivo: refresco automático y aviso de mensajes nuevos ----
+// Sin esto, el vendedor no se enteraba de que le escribieron hasta
+// recargar a mano, y el badge #chat-badge no lo actualizaba nadie.
+// Cada 5 s: se actualiza el badge (siempre) y, si la vista de
+// Mensajes está abierta, la lista de conversaciones y los mensajes
+// del chat abierto. El refresco no roba el foco ni reinicia el
+// scroll mientras se escribe: si no hay mensajes nuevos, no se toca
+// el DOM del chat; si los hay y el usuario estaba abajo del todo, se
+// baja solo; si estaba leyendo arriba, se queda donde estaba.
+const CHAT_POLL_MS = 5000;
+let chatSeen = {};
+try { chatSeen = JSON.parse(localStorage.getItem('rd_chat_seen') || '{}') || {}; } catch (e) { chatSeen = {}; }
+function saveChatSeen() { try { localStorage.setItem('rd_chat_seen', JSON.stringify(chatSeen)); } catch (e) { /* el aviso no bloquea nada */ } }
+let lastMessagesSignature = '';
+
+function updateChatBadge(conversations) {
+  const badge = $('#chat-badge');
+  if (!badge) return;
+  const me = api.user && api.user.id;
+  const unread = (conversations || []).filter((c) =>
+    c.last_message_id && c.last_message_sender_id !== me && Number(chatSeen[c.id] || 0) < Number(c.last_message_id)).length;
+  badge.textContent = unread > 0 ? String(unread) : '';
+  badge.hidden = unread === 0;
+}
+
+async function refreshChatBadge() {
+  if (!api.user) { updateChatBadge([]); return; }
+  try { const d = await api.call('/api/chat'); updateChatBadge(d.conversations); }
+  catch (e) { /* el badge no bloquea nada */ }
+}
+
+function markConversationSeen(convId, messages) {
+  const last = messages && messages.length ? messages[messages.length - 1] : null;
+  chatSeen[convId] = last ? Number(last.id) || 0 : 0;
+  saveChatSeen();
+}
+
+async function pollChat() {
+  if (!api.user) return;
+  await refreshChatBadge();
+  if ($('#view-chat').hidden) return;
+  if (currentConv) await loadMessages(currentConv, { silent: true });
+  else await loadConversations();
+}
+
 async function renderChatPeer() {
   const peerEl = $('#chat-peer');
   if (!peerEl) return;
@@ -481,10 +552,19 @@ $('#chat-peer').addEventListener('click', (ev) => {
   if (seller) openProfile(seller.dataset.alias);
 });
 
-async function loadMessages(id) {
+async function loadMessages(id, { silent = false } = {}) {
   showChatError('');
   try {
     const d = await api.call(`/api/chat/${id}/messages`);
+    const signature = `${id}:${(d.messages || []).map((m) => m.id).join(',')}`;
+    if (silent && signature === lastMessagesSignature) {
+      // Nada nuevo: no tocar el DOM (no se pierde el scroll ni el foco).
+      return;
+    }
+    lastMessagesSignature = signature;
+    const box = $('#chat-messages');
+    const wasAtBottom = box ? (box.scrollHeight - box.scrollTop - box.clientHeight < 40) : true;
+    const prevScroll = box ? box.scrollTop : 0;
     // Custodia en el chat: se ve el estado del trato y quién puede actuar.
     const escrowEl = $('#chat-escrow');
     const actionsEl = $('#chat-actions');
@@ -517,7 +597,10 @@ async function loadMessages(id) {
     $('#chat-messages').innerHTML = d.messages.map((m) => `
       <div class="bubble ${m.sender_id === api.user.id ? 'mine' : ''}">
         <strong>${esc(m.sender_alias)}</strong><br>${esc(m.body)}</div>`).join('') || '<p class="muted">Sin mensajes todavía. Habla aquí para negociar el trato: enviar un mensaje no compra nada.</p>';
+    if (box) box.scrollTop = wasAtBottom ? box.scrollHeight : prevScroll;
     $('#chat-form').hidden = false;
+    markConversationSeen(id, d.messages);
+    refreshChatBadge();
   } catch (e) {
     $('#chat-messages').innerHTML = `<p class="msg error">${esc(e.message)}</p>`;
     $('#chat-form').hidden = true;
@@ -542,6 +625,11 @@ async function authSubmit(form, path, msgEl) {
     api.saveAuth(data); renderAuthArea();
     msgEl.textContent = `Bienvenido, ${data.user.alias}.`; msgEl.className = 'msg ok';
     loadStats();
+    // Si el usuario venía de pulsar "Contactar al vendedor" sin haber
+    // entrado, ahora se abre ese chat en vez de dejarlo en la tienda.
+    const pending = getPendingContact();
+    clearPendingContact();
+    if (pending) { await openChatForListing(pending); return; }
     showView('shop'); loadListings();
   } catch (e) { msgEl.textContent = e.message; msgEl.className = 'msg error'; }
 }
@@ -744,3 +832,5 @@ $('#modal-body').addEventListener('click', (ev) => {
 renderAuthArea();
 loadStats();
 loadListings();
+refreshChatBadge();
+setInterval(() => { pollChat().catch(() => {}); }, CHAT_POLL_MS);
