@@ -37,19 +37,24 @@ function badgeHtml(badge) {
 }
 
 // Letras de rango: vienen del servidor (rank_badges) y solo se
-// muestran aquí: A dorado, M azul, V verde, N gris.
-function rankBadgesHtml(letters) {
+// muestran aquí: A dorado, M azul, V verde, N gris. Grandes y
+// llamativas (~26px, 'sm' ~20px en el chat y las listas densas).
+function rankBadgesHtml(letters, size) {
   const list = Array.isArray(letters) ? letters : [];
   if (!list.length) return '';
   const titles = { A: 'Admin', M: 'Moderador', V: 'Veterano', N: 'Nuevo usuario' };
   const title = list.map((l) => titles[l] || l).join(' · ');
-  return `<span class="rank-letters" title="Rango: ${esc(title)}">${list.map((l) => `<span class="rank rank-${esc(String(l).toLowerCase())}">${esc(l)}</span>`).join('')}</span>`;
+  const cls = size === 'sm' ? 'rank-letters rank-sm' : 'rank-letters';
+  return `<span class="${cls}" title="Rango: ${esc(title)}">${list.map((l) => `<span class="rank rank-${esc(String(l).toLowerCase())}">${esc(l)}</span>`).join('')}</span>`;
 }
 
-// Insignia de verificado: el admin y los usuarios que el admin
-// verifique la muestran junto a las letras de rango.
-function verifiedHtml(verified) {
-  return verified ? '<span class="badge badge-verificado">✓ Verificado</span>' : '';
+// Insignia de verificado estilo Facebook: círculo azul #1877F2 con
+// el check blanco dentro, anillo blanco y brillo azul. Grande (26px)
+// junto al nombre en el perfil; pequeña (18px) en cabeceras y listas.
+function verifiedHtml(verified, size) {
+  if (!verified) return '';
+  const cls = size === 'sm' ? 'badge-verificado verified-badge verified-sm' : 'badge-verificado verified-badge verified-lg';
+  return `<span class="${cls}" title="Verificado" role="img" aria-label="Verificado"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="#1877F2" stroke="#fff" stroke-width="2"/><path d="M7 12.6l3.2 3.2L17 9.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
 }
 
 // Caché de perfiles por alias, para no pedir el mismo perfil cada
@@ -64,7 +69,7 @@ async function fetchProfile(alias) {
 async function badgeForAlias(alias) {
   try {
     const p = await fetchProfile(alias);
-    return `${badgeHtml(p.badge)} ${rankBadgesHtml(p.rank_badges)}${verifiedHtml(p.verified)}`;
+    return `${badgeHtml(p.badge)} ${rankBadgesHtml(p.rank_badges, 'sm')}${verifiedHtml(p.verified, 'sm')}`;
   } catch (e) { return ''; }
 }
 
@@ -77,7 +82,7 @@ function profileHtml(p) {
       </button>`).join('') : '<p class="muted">Sin anuncios activos en este momento.</p>';
   return `
     <h3>◆ ${esc(p.alias)} ${badgeHtml(p.badge)} ${rankBadgesHtml(p.rank_badges)}${verifiedHtml(p.verified)}</h3>
-    <p class="muted small">Miembro desde ${esc(memberDate)} (${p.member_days} ${p.member_days === 1 ? 'día' : 'días'}) · Rango: <strong>${esc(p.rank_label || 'Nuevo usuario')}</strong>${p.verified ? ' · ✓ Verificado' : ''}</p>
+    <p class="muted small">Miembro desde ${esc(memberDate)} (${p.member_days} ${p.member_days === 1 ? 'día' : 'días'}) · Rango: <strong>${esc(p.rank_label || 'Nuevo usuario')}</strong>${p.verified ? ' · Verificado' : ''}</p>
     <div class="profile-stats">
       <div class="stat"><strong>${p.reputation} / 100</strong><span>reputación</span></div>
       <div class="stat"><strong>${p.closed_total}</strong><span>tratos cerrados</span></div>
@@ -179,7 +184,7 @@ function listingCardHtml(l) {
         <h3>${esc(l.title)}</h3>
         <p class="muted">${esc(l.description || '')}</p>
         <p class="price">${esc(l.price_display)}</p>
-        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} ${rankBadgesHtml(l.seller_rank_badges)}${verifiedHtml(l.seller_verified)} · Pagos solo en BTC</p>
+        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} ${rankBadgesHtml(l.seller_rank_badges)}${verifiedHtml(l.seller_verified, 'sm')} · Pagos solo en BTC</p>
         ${agotado ? '<p class="muted small">Estado: <strong>Agotado</strong></p>' : ''}
         <div class="row">
           ${agotado
@@ -612,7 +617,7 @@ async function loadMessages(id, { silent = false } = {}) {
     }
     $('#chat-messages').innerHTML = d.messages.map((m) => `
       <div class="bubble ${m.sender_id === api.user.id ? 'mine' : ''}">
-        <strong>${esc(m.sender_alias)}</strong> ${rankBadgesHtml(m.sender_rank_badges)}${verifiedHtml(m.sender_verified)}<br>${esc(m.body)}</div>`).join('') || '<p class="muted">Sin mensajes todavía. Habla aquí para negociar el trato: enviar un mensaje no compra nada.</p>';
+        <strong>${esc(m.sender_alias)}</strong> ${rankBadgesHtml(m.sender_rank_badges, 'sm')}${verifiedHtml(m.sender_verified, 'sm')}<br>${esc(m.body)}</div>`).join('') || '<p class="muted">Sin mensajes todavía. Habla aquí para negociar el trato: enviar un mensaje no compra nada.</p>';
     if (box) box.scrollTop = wasAtBottom ? box.scrollHeight : prevScroll;
     $('#chat-form').hidden = false;
     markConversationSeen(id, d.messages);
@@ -776,18 +781,18 @@ async function loadAdminTab() {
           // Los demás se cambian con el selector (M/V/N, nunca A).
           u.rank === 'admin'
             ? `${rankBadgesHtml(u.rank_badges)} <span class="muted small">Admin</span>`
-            : `<select class="admin-rank-select" data-id="${u.id}" data-alias="${esc(u.alias)}" aria-label="Rango de ${esc(u.alias)}">
+            : `<select class="admin-rank-select" data-id="${u.id}" data-alias="${esc(u.alias)}" data-rank="${esc(u.rank)}" aria-label="Rango de ${esc(u.alias)}">
                  <option value="moderator" ${u.rank === 'moderator' ? 'selected' : ''}>Moderador (M)</option>
                  <option value="veteran" ${u.rank === 'veteran' ? 'selected' : ''}>Veterano (V)</option>
                  <option value="new" ${u.rank === 'new' ? 'selected' : ''}>Nuevo (N)</option>
                </select> ${rankBadgesHtml(u.rank_badges)}`,
           // Al admin no se le puede quitar la verificación.
           u.verified
-            ? `<span class="badge badge-verificado">✓ Verificado</span>${u.rank === 'admin' ? '' : ` <button class="ghost admin-verify-btn" data-id="${u.id}" data-verified="false">Quitar verificación</button>`}`
+            ? `${verifiedHtml(true, 'sm')}${u.rank === 'admin' ? '' : ` <button class="ghost admin-verify-btn" data-id="${u.id}" data-verified="false">Quitar verificación</button>`}`
             : `<button class="ghost admin-verify-btn" data-id="${u.id}" data-verified="true">Verificar</button>`,
           esc(u.created_at), u.listings_count, u.orders_count,
         ]),
-      ) + '<p class="muted small">Rangos: A = Admin (solo el dueño, con todas las letras), M = Moderador, V = Veterano, N = Nuevo usuario. El moderador muestra M, V y N; el veterano V y N; el nuevo solo N. La verificación muestra ✓ Verificado junto a las letras.</p>';
+      ) + '<p class="muted small">Rangos: A = Admin (solo el dueño, con todas las letras), M = Moderador, V = Veterano, N = Nuevo usuario. El moderador muestra M, V y N; el veterano V y N; el nuevo solo N. La verificación muestra la insignia azul junto a las letras.</p>';
     } else if (adminTab === 'anuncios') {
       const d = await adminApi.call('/api/admin/listings');
       content.innerHTML = adminTable(
@@ -852,7 +857,7 @@ $('#admin-content').addEventListener('click', async (ev) => {
   const verify = ev.target.closest('.admin-verify-btn');
   if (verify) {
     const want = verify.dataset.verified === 'true';
-    if (!confirm(want ? '¿Verificar a este usuario? Mostrará la insignia ✓ Verificado junto a sus letras de rango.' : '¿Quitar la verificación a este usuario? Dejará de mostrar ✓ Verificado.')) return;
+    if (!confirm(want ? '¿Verificar a este usuario? Mostrará la insignia azul de verificado junto a sus letras de rango.' : '¿Quitar la verificación a este usuario? Dejará de mostrar la insignia de verificado.')) return;
     try {
       await adminApi.call(`/api/admin/users/${verify.dataset.id}/verify`, { method: 'POST', body: JSON.stringify({ verified: want }) });
       loadAdminTab();

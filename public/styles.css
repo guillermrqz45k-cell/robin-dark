@@ -183,22 +183,36 @@ main { max-width: 1100px; margin: 0 auto; padding: 20px; perspective: 1200px; }
   color: var(--gold); text-decoration: underline; text-underline-offset: 2px;
 }
 .seller-link:hover { color: var(--gold-bright); }
-.badge-verificado {
-  background: var(--gold-grad); color: #1a1200;
-  box-shadow: 0 2px 0 #6b4d05, 0 0 14px rgba(242, 193, 78, .55);
+/* Insignia de verificado estilo Facebook: círculo azul con check
+   blanco. La clase .badge-verificado es solo el envoltorio del SVG
+   (sin fondo dorado); el brillo azul va en .verified-badge. */
+.badge-verificado { background: none; box-shadow: none; padding: 0; }
+.verified-badge {
+  display: inline-flex; vertical-align: middle; line-height: 0;
+  filter: drop-shadow(0 0 6px rgba(24, 119, 242, .8)) drop-shadow(0 2px 3px rgba(0, 0, 0, .65));
 }
+.verified-badge svg { display: block; }
+.verified-lg svg { width: 26px; height: 26px; }
+.verified-sm svg { width: 18px; height: 18px; }
 .badge-top { background: linear-gradient(135deg, #ffe9a8, #f2c14e); color: #1a1200; box-shadow: 0 2px 0 #6b4d05, 0 0 12px rgba(242, 193, 78, .4); }
 .badge-confiable { background: linear-gradient(180deg, #3a2d10, #241c0c); color: var(--gold); border: 1px solid var(--gold); }
 .badge-nuevo { background: linear-gradient(180deg, #2a2110, #171208); color: var(--muted); border: 1px solid var(--line); }
-/* Letras de rango: A dorado, M azul, V verde, N gris. Van junto a
-   la insignia de reputación en tienda, chat y perfil. */
-.rank-letters { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 2px; }
-.rank { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 6px; font-size: .75rem; font-weight: 900; line-height: 1; }
-.rank-a { background: var(--gold-grad); color: #1a1200; box-shadow: 0 2px 0 #6b4d05, 0 0 10px rgba(242, 193, 78, .45); }
-.rank-m { background: linear-gradient(180deg, #1d4ed8, #1e3a8a); color: #dbeafe; box-shadow: 0 2px 0 #172554; }
-.rank-v { background: linear-gradient(180deg, #15803d, #14532d); color: #dcfce7; box-shadow: 0 2px 0 #052e16; }
-.rank-n { background: linear-gradient(180deg, #3f3f46, #27272a); color: #d4d4d8; border: 1px solid var(--line); }
+/* Letras de rango llamativas: grandes (~26px), cada una con un
+   degradado vivo de su color, borde luminoso y resplandor propio.
+   Van junto a la insignia de reputación en tienda, chat y perfil. */
+.rank-letters { display: inline-flex; gap: 5px; vertical-align: middle; margin-left: 4px; }
+.rank { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; font-size: 1rem; font-weight: 900; line-height: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, .65); }
+.rank-letters.rank-sm { gap: 3px; margin-left: 2px; }
+.rank-letters.rank-sm .rank { min-width: 20px; height: 20px; padding: 0 4px; border-radius: 6px; font-size: .8rem; }
+.rank-a { background: var(--gold-grad); color: #1a1200; border: 1px solid #ffe9a8; box-shadow: 0 2px 0 #6b4d05, 0 0 16px rgba(242, 193, 78, .8), 0 0 5px rgba(255, 233, 168, .9); }
+.rank-m { background: linear-gradient(180deg, #60a5fa, #1d4ed8 55%, #1e3a8a); color: #eff6ff; border: 1px solid #93c5fd; box-shadow: 0 2px 0 #172554, 0 0 16px rgba(59, 130, 246, .75); }
+.rank-v { background: linear-gradient(180deg, #4ade80, #15803d 55%, #14532d); color: #f0fdf4; border: 1px solid #86efac; box-shadow: 0 2px 0 #052e16, 0 0 16px rgba(34, 197, 94, .7); }
+.rank-n { background: linear-gradient(180deg, #a1a1aa, #3f3f46 60%, #27272a); color: #fafafa; border: 1px solid #d4d4d8; box-shadow: 0 2px 0 #18181b, 0 0 12px rgba(161, 161, 170, .5); }
 .admin-rank-select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; font: inherit; }
+/* El rango activo en el panel Admin brilla con el color de su rango. */
+.admin-rank-select[data-rank="moderator"] { border-color: #60a5fa; color: #dbeafe; box-shadow: 0 0 0 2px rgba(59, 130, 246, .35), 0 0 16px rgba(59, 130, 246, .6); }
+.admin-rank-select[data-rank="veteran"] { border-color: #4ade80; color: #dcfce7; box-shadow: 0 0 0 2px rgba(34, 197, 94, .35), 0 0 16px rgba(34, 197, 94, .6); }
+.admin-rank-select[data-rank="new"] { border-color: #a1a1aa; color: #e4e4e7; box-shadow: 0 0 0 2px rgba(161, 161, 170, .3), 0 0 12px rgba(161, 161, 170, .45); }
 .chat-peer {
   font-weight: 800; padding: 10px 12px; margin-bottom: 10px;
   background: linear-gradient(160deg, #241c0c, var(--panel));
