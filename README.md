@@ -6,6 +6,7 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 
 - **Registro e inicio de sesión anónimos:** solo alias + contraseña. Sin correo, sin teléfono y sin ubicación. Las contraseñas se guardan cifradas con bcrypt. No se guarda ni se muestra la ubicación de nadie.
 - **Tienda con buscador:** la búsqueda es la forma de encontrar artículos. No hay filtros ni botones de categorías en ningún lado.
+- **Publicaciones (todas las de todos los usuarios):** pestaña «Publicaciones» en la navegación, con TODAS las publicaciones reales de la base de datos, disponibles y agotadas, desde el endpoint público `GET /api/listings/all` (sin token, sin `password_hash` ni datos privados). Contadores en vivo — total, disponibles, agotadas y nº de vendedores publicando — y filtro por estado Todas / Disponibles / Agotadas (los contadores siempre son los de todo, el filtro solo cambia la lista). Reutiliza las mismas tarjetas que la Tienda: alias del vendedor clicable con perfil e insignia, precio en BTC y stock; al tocar una disponible se abre su detalle/contacto por chat como en la Tienda, y una agotada muestra «Agotado» sin botón de contacto. La Tienda sigue siendo el escaparate con buscador y solo muestra lo disponible.
 - **Publicar anuncios:** título, descripción, precio en BTC y **cantidad en stock** (por defecto 1). Un anuncio NO es de una sola unidad: se vende unidad a unidad hasta agotar el stock.
 - **Chat privado:** solo entre comprador y vendedor, por anuncio. El chat es solo para contactar y negociar: enviar un mensaje nunca crea un pedido, nunca marca el anuncio como vendido y nunca muestra "compra exitosa". Un artículo agotado no admite tratos nuevos.
 - **Marcar como vendido (solo el vendedor):** cuando el trato se cierra en el chat, el vendedor marca su anuncio como vendido (en Mi cuenta o en el chat). Eso crea el pedido y **descuenta 1 unidad del stock**. El anuncio sigue en la tienda mientras queden unidades y solo se agota cuando el stock llega a 0. La única otra forma de que se acabe es que el vendedor lo dé por agotado, con el botón "Marcar como agotado" en Mi cuenta; con "Reponer stock" vuelve a estar disponible con la cantidad que indique.
@@ -41,7 +42,7 @@ robin-dark-js/
 │       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
 │       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
 │       ├── users.js        # GET /api/users/:alias/profile (público: perfil, reputación, insignia, tiempo de respuesta)
-│       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar con stock) · POST /api/listings/:id/mark-out-of-stock · POST /api/listings/:id/restock
+│       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar con stock) · GET /api/listings/all (todas las publicaciones, contadores y filtro por estado) · POST /api/listings/:id/mark-out-of-stock · POST /api/listings/:id/restock
 │       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación; descuenta 1 de stock) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
 │       ├── stats.js        # GET /api/stats (conteos públicos: usuarios, anuncios, tratos cerrados, mensajes)
 │       └── chat.js         # GET/POST /api/chat y /api/chat/:id/messages (enviar un mensaje nunca vende)
@@ -95,6 +96,19 @@ node scripts/test-profile.js
 # Top/Verificado), tiempo de respuesta, contacto y chat, venta con
 # custodia y cancelación. Usa una base SQLite nueva y vacía y la
 # borra al terminar; no toca el sitio público.
+```
+
+### Pruebas locales (apartado Publicaciones)
+
+```bash
+node scripts/test-publicaciones.js
+# 28 pruebas: publica 2 anuncios con stock, marca uno agotado y
+# verifica que GET /api/listings/all muestra ambos con contadores
+# correctos (total 2, disponibles 1, agotadas 1, vendedores 1), que
+# el filtro Todas/Disponibles/Agotadas funciona, que la Tienda sigue
+# mostrando solo el disponible y que contactar por el agotado da
+# 409. Usa una base SQLite nueva y vacía y la borra al terminar;
+# no toca el sitio público.
 ```
 
 ```bash
