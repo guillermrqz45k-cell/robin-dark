@@ -46,6 +46,11 @@ router.post('/', requireAuth, requireObjectBody, async (req, res) => {
       [listing.id, req.user.id, listing.seller_id],
     );
     if (existing) return res.json({ conversation: existing });
+    // Un artículo agotado no admite tratos nuevos: la única forma
+    // de que vuelva es que el vendedor reponga el stock.
+    if (listing.status !== 'disponible') {
+      return res.status(409).json({ error: 'Ese artículo está agotado.' });
+    }
     const created = await db.query(
       `INSERT INTO conversations (listing_id, buyer_id, seller_id)
        VALUES ($1, $2, $3) RETURNING *`,
@@ -69,10 +74,15 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     if (conv.buyer_id !== req.user.id && conv.seller_id !== req.user.id) {
       return res.status(403).json({ error: 'Este chat no es tuyo.' });
     }
-    const listing = await db.get('SELECT id, title, status, price_sats FROM listings WHERE id = $1', [conv.listing_id]);
+    const listing = await db.get('SELECT id, title, status, stock, price_sats FROM listings WHERE id = $1', [conv.listing_id]);
+    // Pedido de ESTA conversación (este comprador y este vendedor),
+    // no el último pedido del anuncio: un anuncio con stock puede
+    // tener varios pedidos, uno por unidad vendida y por comprador.
+    // Mostrar el pedido de otro comprador en este chat sería
+    // confundir custodias y bloquear el botón de vender.
     const order = await db.get(
-      'SELECT * FROM orders WHERE listing_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [conv.listing_id],
+      'SELECT * FROM orders WHERE listing_id = $1 AND buyer_id = $2 AND seller_id = $3 ORDER BY created_at DESC LIMIT 1',
+      [conv.listing_id, conv.buyer_id, conv.seller_id],
     );
     const r = await db.query(
       `SELECT m.*, u.alias AS sender_alias FROM messages m
@@ -82,7 +92,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
     );
     return res.json({
       conversation: conv,
-      listing: listing ? { id: listing.id, title: listing.title, status: listing.status, price_sats: Number(listing.price_sats) } : null,
+      listing: listing ? { id: listing.id, title: listing.title, status: listing.status, stock: Number(listing.stock ?? 1), cantidad: Number(listing.stock ?? 1), price_sats: Number(listing.price_sats) } : null,
       // Custodia: null si aún no hay pedido; si lo hay, su estado
       // (retenido / liberado) se muestra en el chat.
       order: order ? { id: order.id, status: order.status, buyer_id: order.buyer_id, seller_id: order.seller_id, price_sats: Number(order.price_sats) } : null,
