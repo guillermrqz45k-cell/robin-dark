@@ -199,5 +199,3 @@ footer strong { color: var(--gold); }
 .modal-close { position: absolute; top: 10px; right: 10px; }
 @media (max-width: 700px) { .chat-layout { grid-template-columns: 1fr; } .auth-area { margin-left: 0; } }
 
-/* Monedero recargable: saldo grande en dorado. */
-.balance-big { font-size: 1.6rem; }
