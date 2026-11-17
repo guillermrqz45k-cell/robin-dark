@@ -6,6 +6,7 @@ const db = require('../db');
 const { formatBtc } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody, escapeLike } = require('../middleware/validate');
+const { daysSince, badgeFor } = require('../reputation');
 
 const router = express.Router();
 const SATS_PER_BTC = 100_000_000;
@@ -34,6 +35,17 @@ function toSats(priceBtc) {
   return sats;
 }
 
+function sellerBadge(row) {
+  // La insignia del vendedor viaja con el anuncio: el cliente solo
+  // la muestra. Se calcula aquí, en el servidor, con la misma
+  // función que usa el perfil público (src/reputation.js).
+  const closed = Number(row.seller_closed ?? 0);
+  const cancelled = Number(row.seller_cancelled ?? 0);
+  const days = daysSince(row.seller_created_at);
+  const isAdmin = Boolean(process.env.ADMIN_ALIAS) && row.seller_alias === process.env.ADMIN_ALIAS;
+  return badgeFor({ isAdmin, days, closed, cancelled });
+}
+
 function present(row) {
   if (!row) return null;
   const stock = Number(row.stock ?? 1);
@@ -50,9 +62,20 @@ function present(row) {
     status: row.status,
     seller_id: row.seller_id,
     seller_alias: row.seller_alias,
+    seller_badge: sellerBadge(row),
     created_at: row.created_at,
   };
 }
+
+// Datos del vendedor para su insignia: fecha de registro, tratos
+// cerrados (como vendedor y como comprador) y tratos cancelados.
+// Son subconsultas sobre columnas propias, sin parámetros del
+// usuario: funcionan igual en Postgres y en SQLite.
+const SELLER_BADGE_COLS = `
+  u.created_at AS seller_created_at,
+  (SELECT COUNT(*) FROM orders o WHERE o.seller_id = l.seller_id AND o.status IN ('liberado', 'completado')) +
+  (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = l.seller_id AND o.status IN ('liberado', 'completado')) AS seller_closed,
+  (SELECT COUNT(*) FROM orders o WHERE (o.seller_id = l.seller_id OR o.buyer_id = l.seller_id) AND o.status = 'cancelado') AS seller_cancelled`;
 
 // GET /api/listings?search=texto — solo anuncios disponibles, más recientes primero.
 router.get('/', async (req, res) => {
@@ -69,7 +92,7 @@ router.get('/', async (req, res) => {
       // Postgres: ILIKE (sin distinción de mayúsculas). SQLite: LIKE.
       const op = db.usePostgres ? 'ILIKE' : 'LIKE';
       const r = await db.query(
-        `SELECT l.*, u.alias AS seller_alias FROM listings l
+        `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
          JOIN users u ON u.id = l.seller_id
          WHERE l.status = 'disponible' AND (l.title ${op} $1 ESCAPE '\\' OR l.description ${op} $1 ESCAPE '\\')
          ORDER BY l.created_at DESC LIMIT 100`,
@@ -78,7 +101,7 @@ router.get('/', async (req, res) => {
       rows = r.rows;
     } else {
       const r = await db.query(
-        `SELECT l.*, u.alias AS seller_alias FROM listings l
+        `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
          JOIN users u ON u.id = l.seller_id
          WHERE l.status = 'disponible' ORDER BY l.created_at DESC LIMIT 100`,
       );
@@ -97,7 +120,7 @@ router.get('/:id', async (req, res) => {
   if (id === null) return;
   try {
     const row = await db.get(
-      `SELECT l.*, u.alias AS seller_alias FROM listings l
+      `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
        JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
       [id],
     );
@@ -129,7 +152,7 @@ router.post('/', requireAuth, requireObjectBody, async (req, res) => {
       [req.user.id, title, description, priceSats, stock],
     );
     const row = await db.get(
-      `SELECT l.*, u.alias AS seller_alias FROM listings l
+      `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
        JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
       [created.rows[0].id],
     );
@@ -158,7 +181,7 @@ router.post('/:id/mark-out-of-stock', requireAuth, async (req, res) => {
     }
     await db.query("UPDATE listings SET status = 'agotado', stock = 0 WHERE id = $1", [id]);
     const row = await db.get(
-      `SELECT l.*, u.alias AS seller_alias FROM listings l
+      `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
        JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
       [id],
     );
@@ -186,7 +209,7 @@ router.post('/:id/restock', requireAuth, requireObjectBody, async (req, res) => 
     }
     await db.query("UPDATE listings SET stock = $1, status = 'disponible' WHERE id = $2", [stock, id]);
     const row = await db.get(
-      `SELECT l.*, u.alias AS seller_alias FROM listings l
+      `SELECT l.*, u.alias AS seller_alias, ${SELLER_BADGE_COLS} FROM listings l
        JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
       [id],
     );
