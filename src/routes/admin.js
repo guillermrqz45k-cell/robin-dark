@@ -11,11 +11,6 @@
 // GET  /api/admin/stats — conteos: usuarios, anuncios, pedidos, mensajes,
 //        tratos cerrados, custodia retenida/liberada/cancelada (nº y sats).
 // GET  /api/admin/users — todos los usuarios (alias y fecha; SIN contraseñas).
-// POST /api/admin/users/:id/approve-card | /revoke-card — el admin
-//        aprueba o quita el uso de tarjeta para recargar saldo.
-// GET  /api/admin/topups — todas las recargas con su estado.
-// POST /api/admin/topups/:id/complete | /reject — revisión manual
-//        de una recarga pendiente (completar acredita el saldo).
 // GET  /api/admin/listings — todos los anuncios, con vendedor y precio en BTC.
 // GET  /api/admin/orders — todos los pedidos, con comprador, vendedor y
 //        estado de custodia.
@@ -35,7 +30,6 @@ const { signToken } = require('../auth');
 const { requireAdmin } = require('../middleware/auth');
 const { adminLoginLimiter } = require('../middleware/rateLimit');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
-const { presentTopup, creditTopup, rejectTopup } = require('../walletService');
 
 const router = express.Router();
 
@@ -147,29 +141,12 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
     ]);
     const retenidoSats = await sumSats('orders', "WHERE status = $1", ['retenido']);
     const liberadoSats = await sumSats('orders', "WHERE status IN ('liberado', 'completado')");
-    // Monedero: cuántos usuarios tienen tarjeta aprobada y cuántas
-    // recargas hay en cada estado (para la pestaña Recargas).
-    const [cardApproved, topupsPendiente, topupsCompletado, topupsRechazado] = await Promise.all([
-      count('users', 'WHERE card_approved = $1', [true]),
-      count('topups', "WHERE status = $1", ['pendiente']),
-      count('topups', "WHERE status = $1", ['completado']),
-      count('topups', "WHERE status = $1", ['rechazado']),
-    ]);
-    // SQLite guarda card_approved como 0/1: el conteo con true
-    // puede dar 0 ahí; se corrige con un conteo numérico.
-    const cardApprovedFixed = db.usePostgres
-      ? cardApproved
-      : Number((await db.get('SELECT COUNT(*) AS n FROM users WHERE card_approved = 1')).n);
     res.json({
       users,
       listings,
       orders,
       conversations,
       messages,
-      card_approved_users: cardApprovedFixed,
-      topups_pendiente: topupsPendiente,
-      topups_completado: topupsCompletado,
-      topups_rechazado: topupsRechazado,
       listings_disponible: disponible,
       listings_vendido: vendido,
       listings_agotado: agotado,
@@ -194,7 +171,7 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
 router.get('/users', requireAdmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT u.id, u.alias, u.created_at, u.card_approved,
+      `SELECT u.id, u.alias, u.created_at,
               (SELECT COUNT(*) FROM listings l WHERE l.seller_id = u.id) AS listings_count,
               (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = u.id OR o.seller_id = u.id) AS orders_count
        FROM users u ORDER BY u.created_at DESC, u.id DESC LIMIT 500`,
@@ -204,102 +181,12 @@ router.get('/users', requireAdmin, async (req, res, next) => {
         id: r.id,
         alias: r.alias,
         created_at: r.created_at,
-        card_approved: r.card_approved === true || r.card_approved === 1,
         listings_count: Number(r.listings_count),
         orders_count: Number(r.orders_count),
       })),
     });
   } catch (e) {
     next(e);
-  }
-});
-
-// POST /api/admin/users/:id/approve-card — el admin aprueba que
-// este usuario pueda recargar saldo con tarjeta. Sin esto, el
-// usuario recibe 403 al pedir una recarga.
-router.post('/users/:id/approve-card', requireAdmin, async (req, res) => {
-  try {
-    const id = requireIdParam(req, res);
-    if (id === null) return;
-    const user = await db.get('SELECT id, alias FROM users WHERE id = $1', [id]);
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado.' });
-    await db.query('UPDATE users SET card_approved = $1 WHERE id = $2', [db.usePostgres ? true : 1, id]);
-    return res.json({ ok: true, user: { id: user.id, alias: user.alias, card_approved: true } });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: 'No se pudo aprobar la tarjeta.' });
-  }
-});
-
-// POST /api/admin/users/:id/revoke-card — quita la aprobación de
-// tarjeta. Las recargas ya completadas y el saldo no se tocan;
-// solo no podrá pedir recargas nuevas.
-router.post('/users/:id/revoke-card', requireAdmin, async (req, res) => {
-  try {
-    const id = requireIdParam(req, res);
-    if (id === null) return;
-    const user = await db.get('SELECT id, alias FROM users WHERE id = $1', [id]);
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado.' });
-    await db.query('UPDATE users SET card_approved = $1 WHERE id = $2', [db.usePostgres ? false : 0, id]);
-    return res.json({ ok: true, user: { id: user.id, alias: user.alias, card_approved: false } });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: 'No se pudo quitar la aprobación de tarjeta.' });
-  }
-});
-
-// GET /api/admin/topups — todas las recargas, con el usuario.
-router.get('/topups', requireAdmin, async (req, res, next) => {
-  try {
-    const { rows } = await db.query(
-      `SELECT t.*, u.alias AS user_alias FROM topups t
-       JOIN users u ON u.id = t.user_id ORDER BY t.created_at DESC, t.id DESC LIMIT 500`,
-    );
-    res.json({ topups: rows.map(presentTopup) });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// POST /api/admin/topups/:id/complete — el admin marca una recarga
-// pendiente como completada y acredita el saldo (revisión manual,
-// mientras Stripe no está configurado). Acreditar es atómico: un
-// segundo intento devuelve 409 y no duplica el saldo.
-router.post('/topups/:id/complete', requireAdmin, async (req, res) => {
-  try {
-    const id = requireIdParam(req, res);
-    if (id === null) return;
-    const result = await creditTopup(id);
-    if (!result.ok && result.reason === 'not_found') {
-      return res.status(404).json({ error: 'Recarga no encontrada.' });
-    }
-    if (!result.ok) {
-      return res.status(409).json({ error: 'Esa recarga ya no está pendiente.', topup: result.topup });
-    }
-    return res.json({ topup: result.topup });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: 'No se pudo completar la recarga.' });
-  }
-});
-
-// POST /api/admin/topups/:id/reject — rechaza una recarga pendiente
-// (sin acreditar nada).
-router.post('/topups/:id/reject', requireAdmin, async (req, res) => {
-  try {
-    const id = requireIdParam(req, res);
-    if (id === null) return;
-    const result = await rejectTopup(id);
-    if (!result.ok && result.reason === 'not_found') {
-      return res.status(404).json({ error: 'Recarga no encontrada.' });
-    }
-    if (!result.ok) {
-      return res.status(409).json({ error: 'Esa recarga ya no está pendiente.', topup: result.topup });
-    }
-    return res.json({ topup: result.topup });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: 'No se pudo rechazar la recarga.' });
   }
 });
 
