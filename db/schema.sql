@@ -2,6 +2,12 @@
 -- La app crea estas mismas tablas sola al arrancar (src/db.js),
 -- este archivo es la referencia / para crearlas a mano si hace falta.
 -- Ejecutar con: psql "$DATABASE_URL" -f db/schema.sql
+--
+-- Stock: un anuncio NO es de una sola unidad. Cada anuncio tiene
+-- `stock` (unidades que quedan, por defecto 1). Cada venta descuenta
+-- 1 unidad; el anuncio sigue disponible mientras stock > 0 y solo
+-- se agota cuando stock llega a 0 o el vendedor lo marca como
+-- agotado. 'vendido' es un estado antiguo, solo por compatibilidad.
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
@@ -16,7 +22,8 @@ CREATE TABLE IF NOT EXISTS listings (
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   price_sats BIGINT NOT NULL CHECK (price_sats > 0),
-  status TEXT NOT NULL DEFAULT 'disponible' CHECK (status IN ('disponible', 'vendido')),
+  stock INTEGER NOT NULL DEFAULT 1 CHECK (stock >= 0),
+  status TEXT NOT NULL DEFAULT 'disponible' CHECK (status IN ('disponible', 'agotado', 'vendido')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -52,8 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status, created_at D
 CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, created_at ASC);
--- Un anuncio no puede tener dos pedidos ACTIVOS a la vez (defensa
--- contra cierres simultáneos del mismo trato). Los pedidos
--- cancelados no cuentan, así que el trato se puede re-cerrar.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_listing_active
-  ON orders (listing_id) WHERE status != 'cancelado';
+-- NO hay índice único de un pedido por anuncio: un mismo anuncio
+-- puede tener muchos pedidos, uno por cada unidad vendida. Contra
+-- ventas simultáneas de más protege el decremento atómico de stock
+-- en mark-sold (UPDATE ... WHERE stock > 0, con rowCount).
