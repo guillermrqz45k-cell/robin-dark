@@ -8,12 +8,18 @@ const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 
 const router = express.Router();
 
-// GET /api/chat — mis conversaciones.
+// GET /api/chat — mis conversaciones. Cada una trae su último
+// mensaje (id y quién lo envió) para que el cliente pueda avisar
+// con el badge de Mensajes cuando llega algo nuevo sin recargar.
 router.get('/', requireAuth, async (req, res) => {
   try {
     const r = await db.query(
       `SELECT c.*, l.title AS listing_title,
-              b.alias AS buyer_alias, s.alias AS seller_alias
+              b.alias AS buyer_alias, s.alias AS seller_alias,
+              (SELECT m.id FROM messages m WHERE m.conversation_id = c.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_id,
+              (SELECT m.sender_id FROM messages m WHERE m.conversation_id = c.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_sender_id
        FROM conversations c
        JOIN listings l ON l.id = c.listing_id
        JOIN users b ON b.id = c.buyer_id
@@ -34,7 +40,11 @@ router.post('/', requireAuth, requireObjectBody, async (req, res) => {
   try {
     const listingId = Number(req.body.listing_id);
     if (!Number.isInteger(listingId) || listingId <= 0) {
-      return res.status(400).json({ error: 'Anuncio no válido.' });
+      // Se registra lo que llegó (solo el id, sin datos personales):
+      // un id perdido en el cliente llega aquí como null y antes solo
+      // se veía el error en la pantalla del usuario.
+      console.error('[chat] POST /api/chat con listing_id no válido:', JSON.stringify(req.body));
+      return res.status(400).json({ error: 'Anuncio no válido: no llegó el identificador del anuncio. Recarga la página e inténtalo de nuevo.' });
     }
     const listing = await db.get('SELECT * FROM listings WHERE id = $1', [listingId]);
     if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
