@@ -34,9 +34,6 @@ async function init() {
         id SERIAL PRIMARY KEY,
         alias TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        -- card_approved: el admin aprueba (o quita) el uso de tarjeta
-        -- para recargar saldo. Por defecto nadie puede recargar.
-        card_approved BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS listings (
@@ -78,33 +75,6 @@ async function init() {
         body TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-      -- Monedero recargable con tarjeta (saldo en USD, en centavos).
-      -- wallets: un saldo por usuario, nunca negativo. Nunca se
-      -- guardan números de tarjeta, CVV ni datos de la tarjeta:
-      -- el cobro lo hace Stripe (Checkout) fuera de esta base.
-      CREATE TABLE IF NOT EXISTS wallets (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        balance_usd_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_usd_cents >= 0),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      -- topups: cada recarga pedida. Estados: pendiente (pedida,
-      -- a la espera de pago o de revisión del admin), completado
-      -- (saldo acreditado) y rechazado (sin acreditar). La recarga
-      -- solo acredita UNA vez: el paso a completado es atómico
-      -- (UPDATE ... WHERE status='pendiente') y el webhook de
-      -- Stripe es idempotente por stripe_session_id.
-      CREATE TABLE IF NOT EXISTS topups (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        amount_usd_cents BIGINT NOT NULL CHECK (amount_usd_cents >= 500 AND amount_usd_cents <= 50000),
-        status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente', 'completado', 'rechazado')),
-        method TEXT NOT NULL DEFAULT 'tarjeta',
-        stripe_session_id TEXT UNIQUE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_topups_user ON topups (user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_topups_status ON topups (status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
@@ -137,28 +107,6 @@ async function init() {
         CHECK (status IN ('disponible', 'agotado', 'vendido'));
     `);
     await pool.query(`DROP INDEX IF EXISTS idx_orders_listing_active;`);
-    // Migración monedero (2026-11-16): aprobación de tarjeta por
-    // usuario + tablas wallets/topups, sin borrar nada.
-    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS card_approved BOOLEAN NOT NULL DEFAULT FALSE;`);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS wallets (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        balance_usd_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_usd_cents >= 0),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS topups (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        amount_usd_cents BIGINT NOT NULL CHECK (amount_usd_cents >= 500 AND amount_usd_cents <= 50000),
-        status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente', 'completado', 'rechazado')),
-        method TEXT NOT NULL DEFAULT 'tarjeta',
-        stripe_session_id TEXT UNIQUE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_topups_user ON topups (user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_topups_status ON topups (status, created_at DESC);
-    `);
     // Migración custodia: las bases ya creadas (Railway) tienen el CHECK
     // antiguo de orders.status. Se amplía sin borrar pedidos viejos
     // ('pagado_btc' se conserva como estado antiguo válido).
@@ -179,7 +127,6 @@ async function init() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         alias TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        card_approved INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS listings (
@@ -216,23 +163,6 @@ async function init() {
         body TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      CREATE TABLE IF NOT EXISTS wallets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        balance_usd_cents INTEGER NOT NULL DEFAULT 0 CHECK (balance_usd_cents >= 0),
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE TABLE IF NOT EXISTS topups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        amount_usd_cents INTEGER NOT NULL CHECK (amount_usd_cents >= 500 AND amount_usd_cents <= 50000),
-        status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente', 'completado', 'rechazado')),
-        method TEXT NOT NULL DEFAULT 'tarjeta',
-        stripe_session_id TEXT UNIQUE,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_topups_user ON topups (user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_topups_status ON topups (status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
@@ -247,11 +177,6 @@ async function init() {
     //   'vendido'), se reconstruye la tabla con el CHECK nuevo
     //   ('disponible', 'agotado', 'vendido') copiando los datos.
     sqlite.exec(`DROP INDEX IF EXISTS idx_orders_listing_active;`);
-    // Migración monedero en SQLite: columna card_approved si falta.
-    const userCols = sqlite.prepare(`PRAGMA table_info(users)`).all();
-    if (!userCols.some((c) => c.name === 'card_approved')) {
-      sqlite.exec(`ALTER TABLE users ADD COLUMN card_approved INTEGER NOT NULL DEFAULT 0;`);
-    }
     const cols = sqlite.prepare(`PRAGMA table_info(listings)`).all();
     if (!cols.some((c) => c.name === 'stock')) {
       sqlite.exec(`ALTER TABLE listings ADD COLUMN stock INTEGER NOT NULL DEFAULT 1 CHECK (stock >= 0);`);
