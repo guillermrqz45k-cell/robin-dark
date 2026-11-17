@@ -36,6 +36,7 @@
         <button id="search-btn">Buscar</button>
       </div>
       <p class="hint">La búsqueda es la forma de encontrar artículos. No hay categorías.</p>
+      <p id="shop-msg" class="msg" role="status"></p>
     </div>
     <div class="ticker"><span>Pagos solo en BTC ₿ &nbsp;·&nbsp; Registro anónimo &nbsp;·&nbsp; Todo queda guardado &nbsp;·&nbsp; Chat privado entre comprador y vendedor &nbsp;·&nbsp;</span><span>Pagos solo en BTC ₿ &nbsp;·&nbsp; Registro anónimo &nbsp;·&nbsp; Todo queda guardado &nbsp;·&nbsp; Chat privado entre comprador y vendedor &nbsp;·&nbsp;</span></div>
     <div id="listings" class="grid"></div>
@@ -69,6 +70,8 @@
     <div class="chat-layout">
       <div id="conv-list" class="conv-list"></div>
       <div class="chat-panel">
+        <div id="chat-peer" class="chat-peer" hidden></div>
+        <p id="chat-error" class="msg error" hidden></p>
         <div id="chat-escrow" class="msg" hidden></div>
         <div id="chat-actions" class="row" hidden>
           <button id="mark-sold-chat-btn" class="cta" hidden>Marcar como vendido</button>
@@ -76,7 +79,7 @@
         </div>
         <div id="chat-messages" class="chat-messages"><p class="muted">Elige una conversación para hablar con el vendedor o el comprador.</p></div>
         <form id="chat-form" class="chat-form" hidden>
-          <input id="chat-input" maxlength="2000" placeholder="Escribe tu mensaje…" autocomplete="off">
+          <input id="chat-input" maxlength="2000" placeholder="Pregunta por el producto, el precio, el envío…" autocomplete="off">
           <button type="submit">Enviar</button>
         </form>
       </div>
@@ -94,6 +97,7 @@
   <section id="view-auth" class="view" hidden>
     <h2>Entra con tu alias</h2>
     <p class="muted">Solo alias y contraseña. Sin correo, sin teléfono, sin ubicación.</p>
+    <p id="auth-notice" class="msg" role="status"></p>
     <div class="auth-grid">
       <form id="register-form" class="card form">
         <h3>Crear cuenta</h3>

@@ -26,16 +26,85 @@ const api = {
 const $ = (s) => document.querySelector(s);
 const listingsEl = $('#listings');
 let currentConv = null;
+let currentPeerAlias = null;
+
+// ---- Perfil público e insignias ----
+// La insignia SIEMPRE viene del servidor (perfil o anuncio): el
+// cliente solo la muestra, nunca calcula reputación ni umbrales.
+function badgeHtml(badge) {
+  if (!badge || !badge.label) return '';
+  return `<span class="badge badge-${esc(badge.key || 'nuevo')}">${esc(badge.label)}</span>`;
+}
+
+// Caché de perfiles por alias, para no pedir el mismo perfil cada
+// vez que aparece un alias en la tienda o en el chat.
+const profileCache = new Map();
+async function fetchProfile(alias) {
+  if (profileCache.has(alias)) return profileCache.get(alias);
+  const p = await api.call(`/api/users/${encodeURIComponent(alias)}/profile`);
+  profileCache.set(alias, p);
+  return p;
+}
+async function badgeForAlias(alias) {
+  try {
+    const p = await fetchProfile(alias);
+    return badgeHtml(p.badge);
+  } catch (e) { return ''; }
+}
+
+function profileHtml(p) {
+  const memberDate = p.member_since ? new Date(String(p.member_since).replace(' ', 'T')).toLocaleDateString('es') : '—';
+  const listingsHtml = p.active_listings.length ? p.active_listings.map((l) => `
+      <button class="profile-listing" data-listing-id="${l.id}">
+        <strong>${esc(l.title)}</strong><br>
+        <span class="price">${esc(l.price_display)}</span> · <span class="muted small">Stock: ${esc(l.stock_label)}</span>
+      </button>`).join('') : '<p class="muted">Sin anuncios activos en este momento.</p>';
+  return `
+    <h3>◆ ${esc(p.alias)} ${badgeHtml(p.badge)}</h3>
+    <p class="muted small">Miembro desde ${esc(memberDate)} (${p.member_days} ${p.member_days === 1 ? 'día' : 'días'})</p>
+    <div class="profile-stats">
+      <div class="stat"><strong>${p.reputation} / 100</strong><span>reputación</span></div>
+      <div class="stat"><strong>${p.closed_total}</strong><span>tratos cerrados</span></div>
+      <div class="stat"><strong>${p.cancelled}</strong><span>tratos cancelados</span></div>
+      <div class="stat"><strong>${esc(p.response_time)}</strong><span>responde en</span></div>
+    </div>
+    <p class="muted small">Tratos cerrados como vendedor: ${p.closed_as_seller} · Como comprador: ${p.closed_as_buyer} · Anuncios activos: ${p.active_listings_count}</p>
+    <h3>Anuncios activos</h3>
+    ${listingsHtml}`;
+}
+
+async function openProfile(alias) {
+  const body = $('#modal-body');
+  body.innerHTML = '<p class="muted">Cargando perfil…</p>';
+  $('#modal').hidden = false;
+  try {
+    const p = await fetchProfile(alias);
+    body.innerHTML = profileHtml(p);
+  } catch (e) {
+    body.innerHTML = `<p class="msg error">${esc(e.message)}</p>`;
+  }
+}
+
+function closeProfile() { $('#modal').hidden = true; }
+
+function highlightListing(id) {
+  const card = listingsEl.querySelector(`.listing[data-id="${id}"]`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.add('flash');
+  setTimeout(() => card.classList.remove('flash'), 2500);
+}
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function showView(name) {
+function showView(name, { skipLoad = false } = {}) {
   document.querySelectorAll('.view').forEach((v) => { v.hidden = true; });
   const el = $('#view-' + name);
   if (el) el.hidden = false;
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  if (skipLoad) return;
   if (name === 'account') loadAccount();
   if (name === 'chat') loadConversations();
   if (name === 'admin') loadAdmin();
@@ -78,17 +147,25 @@ async function loadStats() {
 }
 
 // ---- Tienda ----
+function showShopMsg(text, kind = '') {
+  const el = $('#shop-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = `msg ${kind}`;
+}
+
 async function loadListings() {
   const q = $('#search-input').value.trim();
   try {
     const data = await api.call('/api/listings' + (q ? '?search=' + encodeURIComponent(q) : ''));
     $('#empty-shop').hidden = data.listings.length > 0;
+    showShopMsg('');
     listingsEl.innerHTML = data.listings.map((l) => `
       <article class="card listing" data-id="${l.id}">
         <h3>${esc(l.title)}</h3>
         <p class="muted">${esc(l.description || '')}</p>
         <p class="price">${esc(l.price_display)}</p>
-        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: ${esc(l.seller_alias)} · Pagos solo en BTC</p>
+        <p class="muted small">Stock: <strong>${esc(l.stock_label || (l.stock ?? 1) + ' unidades')}</strong> · Vendedor: <button type="button" class="seller-link" data-alias="${esc(l.seller_alias)}">${esc(l.seller_alias)}</button> ${badgeHtml(l.seller_badge)} · Pagos solo en BTC</p>
         <div class="row">
           ${l.seller_id === api.user?.id
             ? '<span class="muted small">Es tu anuncio. El trato se cierra en el chat y solo tú puedes marcarlo como vendido.</span>'
@@ -102,19 +179,49 @@ async function loadListings() {
 }
 
 listingsEl.addEventListener('click', async (ev) => {
+  const seller = ev.target.closest('.seller-link');
+  if (seller) return openProfile(seller.dataset.alias);
   const contact = ev.target.closest('.contact-btn');
   if (contact) return openChatForListing(Number(contact.dataset.id));
 });
 
 // El chat solo abre la conversación con el vendedor. No compra nada,
 // no crea ningún pedido y no marca el anuncio como vendido.
+//
+// Por qué el botón parecía no servir (causa real, no del servidor:
+// POST /api/chat sí creaba la conversación):
+//  1. Sin sesión, el botón saltaba a la vista de registro sin decir
+//     nada: parecía que no hacía nada. Ahora avisa en la página
+//     "Entra con tu alias para preguntar al vendedor" y lleva al
+//     registro.
+//  2. Con sesión, showView('chat') disparaba loadConversations()
+//     y openChatForListing la volvía a disparar sin esperar: dos
+//     cargas en paralelo, sin garantía de que la conversación
+//     quedara seleccionada ni de que el formulario quedara listo
+//     y con el foco. Ahora hay una sola carga, esperada, y el
+//     formulario queda con el foco en el input.
+//  3. Los errores solo salían con alert(). Ahora se ven en la
+//     página, en #shop-msg.
 async function openChatForListing(id) {
-  if (!api.user) { showView('auth'); return; }
+  if (!api.user) {
+    const notice = $('#auth-notice');
+    if (notice) { notice.textContent = 'Entra con tu alias para preguntar al vendedor.'; notice.className = 'msg ok'; }
+    showView('auth');
+    const aliasInput = document.querySelector('#login-form input[name="alias"]');
+    if (aliasInput) aliasInput.focus();
+    return;
+  }
+  showShopMsg('');
   try {
     const data = await api.call('/api/chat', { method: 'POST', body: JSON.stringify({ listing_id: id }) });
     currentConv = data.conversation.id;
-    showView('chat'); loadConversations();
-  } catch (e) { alert(e.message); }
+    showView('chat', { skipLoad: true });
+    await loadConversations();
+    const input = $('#chat-input');
+    if (input) input.focus();
+  } catch (e) {
+    showShopMsg(e.message, 'error');
+  }
 }
 
 $('#search-btn').addEventListener('click', loadListings);
@@ -250,18 +357,55 @@ $('#account-content').addEventListener('click', (ev) => {
 });
 
 // ---- Chat ----
+function showChatError(text) {
+  const el = $('#chat-error');
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+}
+
+async function renderChatPeer() {
+  const peerEl = $('#chat-peer');
+  if (!peerEl) return;
+  if (!currentPeerAlias) { peerEl.hidden = true; peerEl.innerHTML = ''; return; }
+  peerEl.hidden = false;
+  peerEl.innerHTML = `Conversación con <button type="button" class="seller-link" data-alias="${esc(currentPeerAlias)}">${esc(currentPeerAlias)}</button> <span class="peer-badge"></span>`;
+  const badgeSlot = peerEl.querySelector('.peer-badge');
+  if (badgeSlot) badgeSlot.innerHTML = await badgeForAlias(currentPeerAlias);
+}
+
 async function loadConversations() {
   const el = $('#conv-list');
   if (!api.user) { el.innerHTML = '<p class="muted">Entra para ver tus mensajes.</p>'; return; }
   try {
     const d = await api.call('/api/chat');
-    if (!d.conversations.length) { el.innerHTML = '<p class="muted">No tienes conversaciones todavía.</p>'; return; }
+    if (!d.conversations.length) {
+      el.innerHTML = '<p class="muted">No tienes conversaciones todavía.</p>';
+      currentPeerAlias = null;
+      await renderChatPeer();
+      return;
+    }
     el.innerHTML = d.conversations.map((c) => {
       const other = c.buyer_id === api.user.id ? c.seller_alias : c.buyer_alias;
-      return `<button class="conv ${currentConv === c.id ? 'active' : ''}" data-id="${c.id}">
-        <strong>${esc(c.listing_title)}</strong><br><span class="muted small">con ${esc(other)}</span></button>`;
+      return `<button class="conv ${currentConv === c.id ? 'active' : ''}" data-id="${c.id}" data-peer="${esc(other)}">
+        <strong>${esc(c.listing_title)}</strong><br><span class="muted small">con <span class="peer-name">${esc(other)}</span> <span class="peer-badge"></span></span></button>`;
     }).join('');
-    if (currentConv) loadMessages(currentConv);
+    // La conversación que se acaba de abrir queda seleccionada: si
+    // el id ya no está en la lista, se limpia para no mostrar un
+    // chat que no existe.
+    const selected = d.conversations.find((c) => c.id === currentConv);
+    if (currentConv && !selected) currentConv = null;
+    currentPeerAlias = selected
+      ? (selected.buyer_id === api.user.id ? selected.seller_alias : selected.buyer_alias)
+      : null;
+    await renderChatPeer();
+    // Insignia del otro participante en cada conversación (se pide
+    // una vez por alias y queda en caché; no bloquea la lista).
+    el.querySelectorAll('.conv').forEach(async (btn) => {
+      const slot = btn.querySelector('.peer-badge');
+      if (slot) slot.innerHTML = await badgeForAlias(btn.dataset.peer);
+    });
+    if (currentConv) await loadMessages(currentConv);
   } catch (e) { el.innerHTML = `<p class="msg error">${esc(e.message)}</p>`; }
 }
 
@@ -270,7 +414,13 @@ $('#conv-list').addEventListener('click', (ev) => {
   if (b) { currentConv = Number(b.dataset.id); loadConversations(); }
 });
 
+$('#chat-peer').addEventListener('click', (ev) => {
+  const seller = ev.target.closest('.seller-link');
+  if (seller) openProfile(seller.dataset.alias);
+});
+
 async function loadMessages(id) {
+  showChatError('');
   try {
     const d = await api.call(`/api/chat/${id}/messages`);
     // Custodia en el chat: se ve el estado del trato y quién puede actuar.
@@ -306,7 +456,10 @@ async function loadMessages(id) {
       <div class="bubble ${m.sender_id === api.user.id ? 'mine' : ''}">
         <strong>${esc(m.sender_alias)}</strong><br>${esc(m.body)}</div>`).join('') || '<p class="muted">Sin mensajes todavía. Habla aquí para negociar el trato: enviar un mensaje no compra nada.</p>';
     $('#chat-form').hidden = false;
-  } catch (e) { $('#chat-messages').innerHTML = `<p class="msg error">${esc(e.message)}</p>`; }
+  } catch (e) {
+    $('#chat-messages').innerHTML = `<p class="msg error">${esc(e.message)}</p>`;
+    $('#chat-form').hidden = true;
+  }
 }
 
 $('#chat-form').addEventListener('submit', async (ev) => {
@@ -315,8 +468,8 @@ $('#chat-form').addEventListener('submit', async (ev) => {
   if (!input.value.trim() || !currentConv) return;
   try {
     await api.call(`/api/chat/${currentConv}/messages`, { method: 'POST', body: JSON.stringify({ body: input.value }) });
-    input.value = ''; loadMessages(currentConv);
-  } catch (e) { alert(e.message); }
+    input.value = ''; showChatError(''); loadMessages(currentConv);
+  } catch (e) { showChatError(e.message); }
 });
 
 // ---- Acceso anónimo ----
@@ -514,9 +667,17 @@ $('#admin-content').addEventListener('click', async (ev) => {
   }
 });
 
-// Modal (detalle rápido, sin categorías)
+// Modal (detalle rápido, sin categorías) y perfil público.
 $('#modal-close').addEventListener('click', () => { $('#modal').hidden = true; });
 $('#modal').addEventListener('click', (ev) => { if (ev.target.id === 'modal') $('#modal').hidden = true; });
+$('#modal-body').addEventListener('click', (ev) => {
+  const item = ev.target.closest('.profile-listing');
+  if (!item) return;
+  const id = Number(item.dataset.listingId);
+  closeProfile();
+  showView('shop');
+  loadListings().then(() => highlightListing(id));
+});
 
 renderAuthArea();
 loadStats();

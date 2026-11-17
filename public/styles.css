@@ -176,6 +176,44 @@ main { max-width: 1100px; margin: 0 auto; padding: 20px; perspective: 1200px; }
   background: linear-gradient(180deg, #241c0c, #120d05); color: var(--text);
   box-shadow: inset 0 3px 8px rgba(0, 0, 0, .65);
 }
+/* Insignias y perfil público: dorado 3D, sin verde. */
+.seller-link {
+  background: none; border: none; padding: 0; font: inherit; font-weight: 800;
+  color: var(--gold); text-decoration: underline; text-underline-offset: 2px;
+}
+.seller-link:hover { color: var(--gold-bright); }
+.badge-verificado {
+  background: var(--gold-grad); color: #1a1200;
+  box-shadow: 0 2px 0 #6b4d05, 0 0 14px rgba(242, 193, 78, .55);
+}
+.badge-top { background: linear-gradient(135deg, #ffe9a8, #f2c14e); color: #1a1200; box-shadow: 0 2px 0 #6b4d05, 0 0 12px rgba(242, 193, 78, .4); }
+.badge-confiable { background: linear-gradient(180deg, #3a2d10, #241c0c); color: var(--gold); border: 1px solid var(--gold); }
+.badge-nuevo { background: linear-gradient(180deg, #2a2110, #171208); color: var(--muted); border: 1px solid var(--line); }
+.chat-peer {
+  font-weight: 800; padding: 10px 12px; margin-bottom: 10px;
+  background: linear-gradient(160deg, #241c0c, var(--panel));
+  border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 233, 168, .15);
+}
+.profile-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px;
+  margin: 14px 0; perspective: 1000px;
+}
+.profile-stats .stat strong { font-size: 1.4rem; }
+.profile-listing {
+  display: block; width: 100%; text-align: left;
+  background: linear-gradient(160deg, #241c0c, var(--panel));
+  color: var(--text); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px; margin-top: 8px; font-size: 1rem;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 233, 168, .15);
+  transition: transform .15s ease, border-color .15s ease;
+}
+.profile-listing:hover { transform: translateY(-2px); border-color: var(--gold); }
+.listing.flash {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 0 3px rgba(242, 193, 78, .5), 0 22px 40px rgba(0, 0, 0, .75), 0 0 24px rgba(242, 193, 78, .4);
+}
+
 footer { text-align: center; color: var(--muted); border-top: 1px solid var(--line); padding: 28px 16px; margin-top: 30px; }
 
 /* Panel de administrador: tablas doradas con relieve 3D. */
