@@ -126,8 +126,21 @@ npm start
 # Sin ADMIN_ALIAS y ADMIN_PASSWORD, el login de admin responde 503.
 ```
 
-- Contraseñas con bcrypt (hash + sal, 12 rondas); nunca se guardan en claro.
-- Sesión con JWT (30 días) en el encabezado `Authorization: Bearer`.
+- Contraseñas con bcrypt (hash + sal, 12 rondas); nunca se guardan en claro. Máximo 72 bytes: bcrypt trunca en silencio más allá de esa longitud.
+- Sesión con JWT (30 días) en el encabezado `Authorization: Bearer`, algoritmo fijado a HS256.
+- **JWT_SECRET obligatorio en producción:** si `DATABASE_URL` está puesto (Railway) y `JWT_SECRET` falta o tiene menos de 32 caracteres, el servidor NO arranca. Ya no hay secreto por defecto en el código.
+- **Límites de velocidad:** login/registro 10 intentos por IP cada 15 min; login de admin 5 intentos por IP cada 15 min; API en general 300 peticiones por IP cada 15 min. El login con alias inexistente tarda lo mismo que con alias existente (comparación bcrypt falsa) para no filtrar qué alias existen.
+- **Cabeceras de seguridad (helmet):** Content-Security-Policy estricta (solo recursos del propio sitio), no se puede meter la tienda en un iframe de otra web, nosniff y HSTS.
+- **Escrow sin carreras:** marcar como vendido y liberar/cancelar la custodia usan actualizaciones atómicas (`UPDATE ... WHERE status=...`) y un índice único parcial en `orders(listing_id)` para pedidos no cancelados, así que dos cierres simultáneos del mismo trato no pueden crear dos pedidos. Para cerrar un trato tiene que haber al menos un mensaje en el chat.
+- **Validación de entradas:** IDs numéricos, cuerpos JSON que sean objetos, búsqueda limitada a 100 caracteres con comodines `%`/`_` escapados, precio máximo de 21.000.000 BTC y satoshis como entero seguro.
+- **Sin inyección SQL:** todas las consultas usan parámetros (`$1`, `$2`…); la búsqueda usa `LIKE` parametrizado con `ESCAPE`.
+- **Sin XSS en la interfaz:** todos los datos de usuarios (alias, títulos, descripciones, mensajes) se escapan antes de insertarlos en el HTML.
+- **Autorización:** cada chat, pedido y anuncio se comprueba contra el usuario del token (nadie ve el chat de otro, nadie marca vendido el anuncio de otro, solo el comprador libera su custodia, solo el vendedor la marca). El panel de admin exige JWT con `role: 'admin'`; un usuario normal recibe 403. El admin nunca se hace pasar por un usuario en el chat.
 - El panel de admin usa un JWT aparte con `role: 'admin'`; las credenciales de admin viven solo en variables de entorno y no hay ninguna contraseña por defecto en el código.
 - No hay geolocalización, ni correo, ni teléfono, ni IP guardada en la base de datos.
 - En producción, pon un `JWT_SECRET` largo y distinto, y usa HTTPS (Railway lo da con su dominio).
+
+### Riesgos que quedan (conocidos, no corregidos aquí)
+- El token JWT se guarda en `localStorage` del navegador: si un día hubiera un XSS, el token podría robarse. La CSP estricta y el escapado de todo el contenido lo hacen muy difícil, pero no imposible. La alternativa (cookies httpOnly) exigiría cambiar toda la autenticación.
+- No hay revocación de sesiones en el servidor: "Salir" solo borra el token del navegador; un token robado vale hasta que caduque (30 días). No hay restablecimiento de contraseña (no hay correo: es anónimo por diseño).
+- Los límites de velocidad viven en la memoria del proceso: si Railway reinicia el servicio, los contadores se reinician. Para un ataque distribuido desde muchas IPs haría falta un límite por cuenta o un WAF.
