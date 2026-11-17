@@ -14,7 +14,6 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 - **Panel de administrador:** botón "Admin" en la barra superior. Entra solo el dueño del sitio, con alias y contraseña aparte de los usuarios anónimos (variables `ADMIN_ALIAS` y `ADMIN_PASSWORD`); sin esas variables, el login de admin no funciona, porque no hay ninguna contraseña por defecto en el código. El panel muestra los conteos, todos los usuarios (alias y fecha, nunca contraseñas), todos los anuncios (con su stock), todos los pedidos y todas las custodias con su estado. El admin puede borrar un anuncio sin pedidos y cancelar una custodia retenida (el pedido pasa a cancelado y la unidad vuelve al stock, con el anuncio disponible). Los usuarios normales reciben 403 en `/api/admin/*`.
 - **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
 - **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
-- **Monedero recargable con tarjeta (solo usuarios aprobados por el admin):** el admin aprueba por usuario el uso de tarjeta (panel → Usuarios → "Aprobar tarjeta"). Solo un usuario aprobado puede pedir una recarga (de $5 a $500, en USD) desde "Mi saldo" en Mi cuenta; la recarga queda "pendiente" y se paga con tarjeta en Stripe Checkout (la tarjeta nunca pasa por este servidor ni se guarda aquí). Al completarse el pago, Stripe avisa por webhook y el saldo se acredita una sola vez. Sin claves de Stripe, el pago con tarjeta responde 503 y el admin puede completar (acredita el saldo) o rechazar la recarga pendiente desde el panel (pestaña "Recargas"). El saldo se ve en "Mi saldo" y en el historial de recargas. **Nota: pagar anuncios con el saldo es el siguiente paso y aún no está hecho** — los anuncios siguen costando solo en BTC y la custodia (retenido → liberado) no cambia; para pagarlo con saldo falta decidir la conversión BTC/USD.
 - **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
 
 ## Estructura
@@ -31,12 +30,10 @@ robin-dark-js/
 ├── src/
 │   ├── db.js               # Postgres (DATABASE_URL) o SQLite local (node:sqlite)
 │   ├── auth.js             # hash bcrypt + JWT
-│   ├── walletService.js    # monedero: acreditar recargas (una sola vez), saldo
 │   ├── middleware/
 │   │   └── auth.js         # requireAuth (Bearer JWT) y requireAdmin (JWT con role: 'admin')
 │   └── routes/
-│       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows|topups · POST /api/admin/users/:id/approve-card|revoke-card · POST /api/admin/topups/:id/complete|reject · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
-│       ├── wallet.js       # GET /api/wallet/balance|topups · POST /api/wallet/topup/request|/topup/:id/checkout · POST /api/wallet/stripe-webhook
+│       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
 │       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
 │       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar con stock) · POST /api/listings/:id/mark-out-of-stock · POST /api/listings/:id/restock
 │       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación; descuenta 1 de stock) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
@@ -52,9 +49,7 @@ robin-dark-js/
 
 | Tabla | Guarda |
 |---|---|
-| `users` | alias, contraseña cifrada, `card_approved` (tarjeta aprobada por el admin), fecha de creación |
-| `wallets` | saldo por usuario en centavos de USD (`balance_usd_cents` >= 0) |
-| `topups` | recargas: usuario, `amount_usd_cents` ($5–$500), estado (`pendiente`/`completado`/`rechazado`), método `tarjeta`, `stripe_session_id` |
+| `users` | alias, contraseña cifrada, fecha de creación |
 | `listings` | vendedor, título, descripción, `price_sats`, `stock` (unidades que quedan, por defecto 1), estado (disponible/agotado; `vendido` es antiguo) |
 | `orders` | anuncio, comprador, vendedor, `price_sats`, estado de custodia (`retenido` → `liberado`; `pagado_btc`/`completado` son estados antiguos) |
 | `conversations` | anuncio, comprador, vendedor (única por los tres) |
@@ -110,8 +105,6 @@ Railway corre la app y la base de datos juntas, sin que la página se duerma. Pr
    - `JWT_SECRET` = una cadena larga y secreta (cámbiala, no uses la de ejemplo)
    - `ADMIN_ALIAS` = tu alias de administrador (por ejemplo `admin`)
    - `ADMIN_PASSWORD` = una contraseña larga y secreta, solo para el panel de administrador. Sin estas dos variables, el panel no deja entrar a nadie.
-   - `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` y `STRIPE_WEBHOOK_SECRET` (opcional, solo para cobrar recargas con tarjeta; sin ellas, el pago con tarjeta no funciona y el admin revisa las recargas a mano). En el panel de Stripe, crea un webhook que apunte a `https://tu-dominio/api/wallet/stripe-webhook` con el evento `checkout.session.completed` y copia su secreto en `STRIPE_WEBHOOK_SECRET`.
-   - `APP_URL` (opcional): la URL pública de la app, para volver tras pagar en Stripe; si no se pone, se usa el host de la petición.
    - `DATABASE_URL` ya la pone Railway al añadir Postgres; si no aparece, usa *Reference* → la variable `DATABASE_URL` del servicio Postgres.
    - Opcional: `PGSSL=false` solo si tu Postgres no usa SSL (en Railway no hace falta).
 5. **Despliega:** Railway detecta `railway.json` y arranca con `node server.js`. El healthcheck es `GET /api/health`.

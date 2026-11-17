@@ -48,12 +48,6 @@ app.use(
 );
 app.disable('x-powered-by');
 
-// Webhook de Stripe: necesita el cuerpo crudo para verificar la
-// firma, así que se monta ANTES de express.json (que lo parsearía
-// y rompería la verificación). No pasa por el limitador de /api.
-const walletRoutes = require('./src/routes/wallet');
-app.post('/api/wallet/stripe-webhook', express.raw({ type: 'application/json' }), walletRoutes.stripeWebhook);
-
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -66,7 +60,6 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', require('./src/routes/auth'));
-app.use('/api/wallet', walletRoutes);
 app.use('/api/listings', require('./src/routes/listings'));
 app.use('/api/orders', require('./src/routes/orders'));
 app.use('/api/chat', require('./src/routes/chat'));
