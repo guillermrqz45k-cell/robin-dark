@@ -11,6 +11,12 @@
 // GET  /api/admin/stats — conteos: usuarios, anuncios, pedidos, mensajes,
 //        tratos cerrados, custodia retenida/liberada/cancelada (nº y sats).
 // GET  /api/admin/users — todos los usuarios (alias y fecha; SIN contraseñas).
+// POST /api/admin/users/:id/rank — el admin cambia el rango de un
+//        usuario (moderator / veteran / new; nunca 'admin': el admin
+//        es único por ADMIN_ALIAS, y al propio admin no se le cambia).
+// POST /api/admin/users/:id/verify — el admin verifica o quita la
+//        verificación a un usuario ({verified: true/false}); al
+//        propio admin no se le puede quitar: siempre es verificado.
 // GET  /api/admin/listings — todos los anuncios, con vendedor y precio en BTC.
 // GET  /api/admin/orders — todos los pedidos, con comprador, vendedor y
 //        estado de custodia.
@@ -30,6 +36,7 @@ const { signToken } = require('../auth');
 const { requireAdmin } = require('../middleware/auth');
 const { adminLoginLimiter } = require('../middleware/rateLimit');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
+const { rankInfo, effectiveVerified, ASSIGNABLE_RANKS } = require('../reputation');
 
 const router = express.Router();
 
@@ -167,26 +174,109 @@ router.get('/stats', requireAdmin, async (req, res, next) => {
 });
 
 // GET /api/admin/users — todos los usuarios. NUNCA se devuelve
-// password_hash: la consulta solo pide id, alias y fecha.
+// password_hash: la consulta solo pide id, alias, rango,
+// verificación y fecha.
 router.get('/users', requireAdmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT u.id, u.alias, u.created_at,
+      `SELECT u.id, u.alias, u.rank, u.verified, u.created_at,
               (SELECT COUNT(*) FROM listings l WHERE l.seller_id = u.id) AS listings_count,
               (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = u.id OR o.seller_id = u.id) AS orders_count
        FROM users u ORDER BY u.created_at DESC, u.id DESC LIMIT 500`,
     );
     res.json({
-      users: rows.map((r) => ({
-        id: r.id,
-        alias: r.alias,
-        created_at: r.created_at,
-        listings_count: Number(r.listings_count),
-        orders_count: Number(r.orders_count),
-      })),
+      users: rows.map((r) => {
+        const info = rankInfo({ rank: r.rank, alias: r.alias });
+        return {
+          id: r.id,
+          alias: r.alias,
+          ...info,
+          verified: effectiveVerified({ verified: r.verified, alias: r.alias }),
+          created_at: r.created_at,
+          listings_count: Number(r.listings_count),
+          orders_count: Number(r.orders_count),
+        };
+      }),
     });
   } catch (e) {
     next(e);
+  }
+});
+
+// POST /api/admin/users/:id/rank { rank } — el admin cambia el
+// rango de un usuario (moderator / veteran / new).
+// - 'admin' NO se puede asignar a nadie: el admin es único y es el
+//   alias de ADMIN_ALIAS (lo resuelve el servidor, no el campo).
+// - Al propio admin (alias ADMIN_ALIAS) no se le puede cambiar el
+//   rango: siempre es admin.
+// - Un valor no válido es 400; un usuario inexistente, 404.
+router.post('/users/:id/rank', requireAdmin, requireObjectBody, async (req, res) => {
+  try {
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const rank = String(req.body.rank || '').trim().toLowerCase();
+    if (rank === 'admin') {
+      return res.status(400).json({ error: 'El rango Admin es único del dueño (ADMIN_ALIAS) y no se puede asignar a otro usuario.' });
+    }
+    if (!ASSIGNABLE_RANKS.includes(rank)) {
+      return res.status(400).json({ error: 'El rango tiene que ser Moderador, Veterano o Nuevo usuario.' });
+    }
+    const user = await db.get('SELECT id, alias, rank, verified FROM users WHERE id = $1', [id]);
+    if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    if (Boolean(process.env.ADMIN_ALIAS) && user.alias === process.env.ADMIN_ALIAS) {
+      return res.status(409).json({ error: 'No se puede cambiar el rango del administrador: siempre es Admin.' });
+    }
+    await db.query('UPDATE users SET rank = $1 WHERE id = $2', [rank, id]);
+    const updated = await db.get('SELECT id, alias, rank, verified FROM users WHERE id = $1', [id]);
+    const info = rankInfo({ rank: updated.rank, alias: updated.alias });
+    return res.json({
+      user: {
+        id: updated.id,
+        alias: updated.alias,
+        ...info,
+        verified: effectiveVerified({ verified: updated.verified, alias: updated.alias }),
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cambiar el rango.' });
+  }
+});
+
+// POST /api/admin/users/:id/verify { verified: true/false } — el
+// admin verifica a un usuario (muestra ✓ Verificado) o le quita
+// la verificación.
+// - Al propio admin no se le puede quitar: el alias de ADMIN_ALIAS
+//   siempre se muestra verificado.
+// - verified tiene que ser true o false (400 si no); un usuario
+//   inexistente es 404.
+router.post('/users/:id/verify', requireAdmin, requireObjectBody, async (req, res) => {
+  try {
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    if (typeof req.body.verified !== 'boolean') {
+      return res.status(400).json({ error: 'verified tiene que ser true o false.' });
+    }
+    const verified = req.body.verified;
+    const user = await db.get('SELECT id, alias, rank, verified FROM users WHERE id = $1', [id]);
+    if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    if (!verified && Boolean(process.env.ADMIN_ALIAS) && user.alias === process.env.ADMIN_ALIAS) {
+      return res.status(409).json({ error: 'El administrador siempre muestra ✓ Verificado: no se le puede quitar.' });
+    }
+    await db.query('UPDATE users SET verified = $1 WHERE id = $2', [verified, id]);
+    const updated = await db.get('SELECT id, alias, rank, verified FROM users WHERE id = $1', [id]);
+    const info = rankInfo({ rank: updated.rank, alias: updated.alias });
+    return res.json({
+      user: {
+        id: updated.id,
+        alias: updated.alias,
+        ...info,
+        verified: effectiveVerified({ verified: updated.verified, alias: updated.alias }),
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cambiar la verificación.' });
   }
 });
 

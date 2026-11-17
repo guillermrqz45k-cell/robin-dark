@@ -6,7 +6,7 @@ const db = require('../db');
 const { formatBtc } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody, escapeLike } = require('../middleware/validate');
-const { daysSince, badgeFor } = require('../reputation');
+const { daysSince, badgeFor, rankInfo, effectiveVerified } = require('../reputation');
 
 const router = express.Router();
 const SATS_PER_BTC = 100_000_000;
@@ -46,6 +46,19 @@ function sellerBadge(row) {
   return badgeFor({ isAdmin, days, closed, cancelled });
 }
 
+function sellerRank(row) {
+  // Rango con letras y verificación del vendedor, también calculados
+  // en el servidor: el cliente solo los muestra.
+  const info = rankInfo({ rank: row.seller_rank, alias: row.seller_alias });
+  return {
+    seller_rank: info.rank,
+    seller_rank_letter: info.rank_letter,
+    seller_rank_label: info.rank_label,
+    seller_rank_badges: info.rank_badges,
+    seller_verified: effectiveVerified({ verified: row.seller_verified, alias: row.seller_alias }),
+  };
+}
+
 function present(row) {
   if (!row) return null;
   const stock = Number(row.stock ?? 1);
@@ -63,6 +76,7 @@ function present(row) {
     seller_id: row.seller_id,
     seller_alias: row.seller_alias,
     seller_badge: sellerBadge(row),
+    ...sellerRank(row),
     created_at: row.created_at,
   };
 }
@@ -73,6 +87,8 @@ function present(row) {
 // usuario: funcionan igual en Postgres y en SQLite.
 const SELLER_BADGE_COLS = `
   u.created_at AS seller_created_at,
+  u.rank AS seller_rank,
+  u.verified AS seller_verified,
   (SELECT COUNT(*) FROM orders o WHERE o.seller_id = l.seller_id AND o.status IN ('liberado', 'completado')) +
   (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = l.seller_id AND o.status IN ('liberado', 'completado')) AS seller_closed,
   (SELECT COUNT(*) FROM orders o WHERE (o.seller_id = l.seller_id OR o.buyer_id = l.seller_id) AND o.status = 'cancelado') AS seller_cancelled`;

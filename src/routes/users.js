@@ -12,6 +12,7 @@ const db = require('../db');
 const { formatBtc } = require('../db');
 const {
   CLOSED_STATUSES, daysSince, computeReputation, badgeFor, median, formatResponseTime,
+  rankInfo, effectiveVerified,
 } = require('../reputation');
 
 const router = express.Router();
@@ -48,7 +49,7 @@ router.get('/:alias/profile', async (req, res) => {
     if (!ALIAS_RE.test(alias)) {
       return res.status(400).json({ error: 'Alias no válido.' });
     }
-    const user = await db.get('SELECT id, alias, created_at FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, alias, rank, verified, created_at FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
 
     const closedIn = `(${CLOSED_STATUSES.map((s) => `'${s}'`).join(', ')})`;
@@ -80,6 +81,7 @@ router.get('/:alias/profile', async (req, res) => {
     const cancelled = Number(cancelledRow.n);
     const responseMinutes = responseTimeMinutes(messageRows.rows, user.id);
     const isAdmin = Boolean(process.env.ADMIN_ALIAS) && user.alias === process.env.ADMIN_ALIAS;
+    const info = rankInfo({ rank: user.rank, alias: user.alias });
 
     return res.json({
       alias: user.alias,
@@ -87,6 +89,10 @@ router.get('/:alias/profile', async (req, res) => {
       member_days: days,
       is_admin: isAdmin,
       badge: badgeFor({ isAdmin, days, closed, cancelled }),
+      // Rango con letras y verificación: viajan con el perfil para
+      // que el cliente los muestre junto a la insignia de reputación.
+      ...info,
+      verified: effectiveVerified({ verified: user.verified, alias: user.alias }),
       reputation: computeReputation({ days, closed, cancelled }),
       active_listings_count: Number(activeRow.n),
       active_listings: activeListings.rows.map((l) => ({
