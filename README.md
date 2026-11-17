@@ -16,6 +16,8 @@ Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base
 - **Perfil público y reputación:** el alias de cualquier vendedor es clicable en la tienda y en el chat, y abre su perfil público (`GET /api/users/:alias/profile`, sin token, sin `password_hash` ni datos privados): miembro desde, anuncios activos (clicables), tratos cerrados como vendedor y como comprador, tratos cancelados, tiempo medio de respuesta y puntuación de reputación 0–100. El tiempo de respuesta es la **mediana** del tiempo entre un mensaje recibido y la respuesta de ese usuario en el mismo chat; si no hay ningún par mensaje/respuesta, muestra "Sin datos". No hay estrellas ni valoraciones inventadas: todo sale de la base de datos.
 - **Reputación (0–100), solo con datos reales:** antigüedad `min(días, 90) / 90 × 20` (hasta 20 puntos) + tratos cerrados `min(cerrados, 10) / 10 × 60` (hasta 60 puntos) + fiabilidad `20` si no hay tratos cancelados, `10` menos por cada cancelado, hasta `0`. Ejemplos: usuario nuevo (0 días, 0 tratos, 0 cancelados) = 20; 10 tratos, 90 días y 0 cancelados = 100; 5 tratos, 45 días y 1 cancelado = 50.
 - **Insignias (la primera que se cumpla, en este orden):** `✓ Verificado` (dorado, solo el alias de `ADMIN_ALIAS`, el dueño del sitio) · `Top` (10 o más tratos cerrados y 90 o más días) · `Confiable` (3 o más tratos cerrados y 0 tratos cancelados) · `Nuevo` (todo lo demás). La insignia se calcula en el servidor (`src/reputation.js`) y viaja con el perfil y con cada anuncio (`seller_badge`); el cliente solo la muestra, nunca la calcula, así no hay dos versiones distintas de los umbrales.
+- **Rangos con letras (jerarquía, asignados por el admin):** A = Admin, M = Moderador, V = Veterano, N = Nuevo usuario (por defecto al registrarse, columna `users.rank`). El admin (alias de `ADMIN_ALIAS`) tiene TODAS las letras (A, M, V, N); el moderador muestra M, V y N; el veterano V y N; el nuevo solo N. Las letras se muestran con color junto a la insignia de reputación en la tienda, el chat y el perfil público (A dorado, M azul, V verde, N gris). El admin cambia el rango desde el panel (selector M/V/N por usuario; el rango Admin no se puede asignar a nadie más ni quitarse al propio admin): `POST /api/admin/users/:id/rank {rank}`. El rango viaja con el perfil (`rank`, `rank_letter`, `rank_label`, `rank_badges`), con cada anuncio (`seller_rank`, `seller_rank_badges`) y con cada mensaje del chat (`sender_rank`, `sender_rank_badges`). Se calcula en el servidor (`src/reputation.js`: `rankInfo`/`effectiveRank`), nunca en el cliente.
+- **Verificación de usuarios:** el admin puede verificar a cualquier usuario desde el panel (botón "Verificar" / "Quitar verificación", columna `users.verified`): un usuario verificado muestra la insignia `✓ Verificado` junto a sus letras de rango en la tienda, el chat y el perfil público (`POST /api/admin/users/:id/verify {verified: true/false}`). El admin (alias de `ADMIN_ALIAS`) siempre se muestra verificado y no se le puede quitar. La verificación viaja con el perfil (`verified`), con cada anuncio (`seller_verified`) y con cada mensaje del chat (`sender_verified`).
 - **Contactar al vendedor sí abre el chat para preguntar:** sin sesión, el botón avisa en la página "Entra con tu alias para preguntar al vendedor" y lleva al registro (antes saltaba al registro sin decir nada y parecía no hacer nada); con sesión, abre la conversación, la deja seleccionada, muestra el formulario con "Pregunta por el producto, el precio, el envío…" y pone el foco en el input. Los errores al abrir el chat se ven en la página, no con `alert()`. La causa no era el servidor (POST /api/chat sí creaba la conversación): era el cliente, que disparaba dos cargas de conversaciones en paralelo sin esperar a ninguna.
 - **Error "Anuncio no válido" al contactar (corregido):** la causa real era el botón, no el servidor. En `listingCardHtml` (`public/app.js`) el botón se construía con comillas simples y `data-id="${l.id}"` quedaba en literal, sin interpolar: cada clic mandaba `listing_id: null` y el servidor devolvía 400 "Anuncio no válido". Ahora el botón usa backticks y el id llega numérico. Además `openChatForListing` valida el id en el cliente antes de llamar a la API (si no es un entero positivo, avisa en la página y no llama al servidor), y el servidor devuelve un mensaje claro y registra el cuerpo recibido si llega un id malo. Las pruebas de API no lo cazaron porque llamaban a `POST /api/chat` directamente con un id numérico; por eso existe `scripts/test-contact-click.js`, que pulsa el botón de verdad con un navegador sin interfaz (jsdom).
 - **Contacto pendiente tras entrar:** si se pulsa "Contactar al vendedor" sin haber entrado, la intención se guarda (`rd_pending_contact` en sessionStorage) y al entrar con éxito (registro o inicio de sesión) se abre automáticamente ese chat, en vez de dejar al usuario en la tienda.
@@ -100,6 +102,22 @@ node scripts/test-profile.js
 # Top/Verificado), tiempo de respuesta, contacto y chat, venta con
 # custodia y cancelación. Usa una base SQLite nueva y vacía y la
 # borra al terminar; no toca el sitio público.
+```
+
+### Pruebas locales (rangos con letras y verificación)
+
+```bash
+node scripts/test-ranks.js
+# 66 pruebas: registro con rango N por defecto; el admin (alias de
+# ADMIN_ALIAS) con las 4 letras (A, M, V, N) y siempre verificado;
+# cambio de rango por el admin (M → 3 letras, V → 2, N → 1) y
+# rechazo sin token de admin, de asignar 'admin' a otro usuario, de
+# cambiar el rango del propio admin y de un rango no válido; la
+# verificación solo la cambia el admin (aparece en perfil, anuncios
+# y mensajes del chat; al admin no se le puede quitar) y el rango
+# aparece en el perfil público, en la tienda y en el chat. Usa una
+# base SQLite nueva y vacía y la borra al terminar; no toca el
+# sitio público.
 ```
 
 ### Pruebas locales (apartado Publicaciones)

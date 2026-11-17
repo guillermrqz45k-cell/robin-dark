@@ -16,7 +16,8 @@
   "name": "robin-dark",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node scripts/test-ranks.js"
   },
   "type": "commonjs",
   "version": "1.0.0",
