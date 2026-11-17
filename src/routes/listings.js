@@ -13,6 +13,18 @@ const SATS_PER_BTC = 100_000_000;
 // precio real puede ser mayor. Antes se aceptaba cualquier número
 // y un valor enorme desbordaba el entero de la base de datos (500).
 const MAX_PRICE_BTC = 21_000_000;
+// Stock máximo por anuncio: 10.000 unidades es más que suficiente
+// para un anuncio y evita cantidades absurdas.
+const MAX_STOCK = 10000;
+
+function parseStock(value) {
+  // Cantidad al publicar (o al reponer). Si no viene, 1 unidad
+  // (el comportamiento de antes). Tiene que ser un entero >= 1.
+  if (value === undefined || value === null || value === '') return 1;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > MAX_STOCK) return null;
+  return n;
+}
 
 function toSats(priceBtc) {
   const btc = Number(priceBtc);
@@ -24,6 +36,7 @@ function toSats(priceBtc) {
 
 function present(row) {
   if (!row) return null;
+  const stock = Number(row.stock ?? 1);
   return {
     id: row.id,
     title: row.title,
@@ -31,6 +44,9 @@ function present(row) {
     price_sats: Number(row.price_sats),
     price_btc: formatBtc(row.price_sats),
     price_display: `₿ ${formatBtc(row.price_sats)}`,
+    stock,
+    cantidad: stock,
+    stock_label: stock === 1 ? '1 unidad' : `${stock} unidades`,
     status: row.status,
     seller_id: row.seller_id,
     seller_alias: row.seller_alias,
@@ -93,19 +109,24 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/listings { title, description, price_btc }
+// POST /api/listings { title, description, price_btc, stock }
+// stock = cantidad de unidades de este artículo (por defecto 1).
+// Un anuncio con stock 3 se puede vender 3 veces: cada venta
+// descuenta 1 y el anuncio sigue en la tienda hasta agotarse.
 router.post('/', requireAuth, requireObjectBody, async (req, res) => {
   try {
     const title = String(req.body.title || '').trim().slice(0, 120);
     const description = String(req.body.description || '').trim().slice(0, 2000);
     const priceSats = toSats(req.body.price_btc);
+    const stock = parseStock(req.body.stock ?? req.body.cantidad);
     if (!title) return res.status(400).json({ error: 'El título es obligatorio.' });
     if (!priceSats) return res.status(400).json({ error: 'El precio debe ser un valor en BTC mayor que 0.' });
+    if (stock === null) return res.status(400).json({ error: `La cantidad tiene que ser un número entero entre 1 y ${MAX_STOCK}.` });
 
     const created = await db.query(
-      `INSERT INTO listings (seller_id, title, description, price_sats)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [req.user.id, title, description, priceSats],
+      `INSERT INTO listings (seller_id, title, description, price_sats, stock)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [req.user.id, title, description, priceSats, stock],
     );
     const row = await db.get(
       `SELECT l.*, u.alias AS seller_alias FROM listings l
@@ -116,6 +137,63 @@ router.post('/', requireAuth, requireObjectBody, async (req, res) => {
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo publicar el anuncio.' });
+  }
+});
+
+// POST /api/listings/:id/mark-out-of-stock — SOLO EL VENDEDOR.
+// La única forma manual de que se acabe un artículo: el vendedor
+// lo da por agotado. El anuncio deja de verse en la tienda y
+// nadie nuevo puede contactar por él. El stock pasa a 0.
+router.post('/:id/mark-out-of-stock', requireAuth, async (req, res) => {
+  try {
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const listing = await db.get('SELECT * FROM listings WHERE id = $1', [id]);
+    if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
+    if (listing.seller_id !== req.user.id) {
+      return res.status(403).json({ error: 'Solo el vendedor de este anuncio puede darlo por agotado.' });
+    }
+    if (listing.status !== 'disponible') {
+      return res.status(409).json({ error: 'Ese anuncio ya está agotado.' });
+    }
+    await db.query("UPDATE listings SET status = 'agotado', stock = 0 WHERE id = $1", [id]);
+    const row = await db.get(
+      `SELECT l.*, u.alias AS seller_alias FROM listings l
+       JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
+      [id],
+    );
+    return res.json({ listing: present(row) });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo marcar el anuncio como agotado.' });
+  }
+});
+
+// POST /api/listings/:id/restock { stock | cantidad } — SOLO EL VENDEDOR.
+// Vuelve a poner en venta un anuncio agotado (o vendido, en filas
+// viejas) con una cantidad nueva, o cambia la cantidad de uno
+// disponible. El anuncio vuelve a 'disponible' con ese stock.
+router.post('/:id/restock', requireAuth, requireObjectBody, async (req, res) => {
+  try {
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const stock = parseStock(req.body.stock ?? req.body.cantidad);
+    if (stock === null) return res.status(400).json({ error: `La cantidad tiene que ser un número entero entre 1 y ${MAX_STOCK}.` });
+    const listing = await db.get('SELECT * FROM listings WHERE id = $1', [id]);
+    if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
+    if (listing.seller_id !== req.user.id) {
+      return res.status(403).json({ error: 'Solo el vendedor de este anuncio puede reponer su stock.' });
+    }
+    await db.query("UPDATE listings SET stock = $1, status = 'disponible' WHERE id = $2", [stock, id]);
+    const row = await db.get(
+      `SELECT l.*, u.alias AS seller_alias FROM listings l
+       JOIN users u ON u.id = l.seller_id WHERE l.id = $1`,
+      [id],
+    );
+    return res.json({ listing: present(row) });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo reponer el stock.' });
   }
 });
 
