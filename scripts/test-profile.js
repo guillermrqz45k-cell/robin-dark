@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = path.join(__dirname, '..');
 const DB_FILE = path.join(ROOT, 'data', 'robin-dark.db');
@@ -266,6 +267,25 @@ async function main() {
     check('el perfil público muestra el nombre nuevo', profName.status === 200 && profName.data.real_name === 'Autor Nuevo', JSON.stringify(profName.data));
     r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: '   ' });
     check('nombre vacío -> 400', r.status === 400, JSON.stringify(r.data));
+
+    console.log('== El nombre solo se cambia 1 vez al mes ==');
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: 'Otro Nombre' });
+    check('cambiar el nombre otra vez enseguida -> 429', r.status === 429 && /una vez al mes/.test(r.data.error || ''), JSON.stringify(r.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: 'Autor Nuevo' });
+    check('repetir el mismo nombre no cuenta como cambio -> 200', r.status === 200, JSON.stringify(r.data));
+    // Hace 31 días: el cambio vuelve a estar permitido.
+    let aged = false;
+    for (let i = 0; i < 5 && !aged; i++) {
+      try {
+        const tdb = new DatabaseSync(DB_FILE);
+        tdb.prepare('UPDATE users SET real_name_changed_at = ? WHERE alias = ?').run(Date.now() - 31 * 24 * 60 * 60 * 1000, 'autor1');
+        tdb.close();
+        aged = true;
+      } catch (e) { await new Promise((r2) => setTimeout(r2, 100)); }
+    }
+    check('se pudo poner el cambio hace 31 días (preparación)', aged);
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: 'Autor Tras Un Mes' });
+    check('pasados 30 días el nombre se puede cambiar -> 200', r.status === 200 && r.data.user.real_name === 'Autor Tras Un Mes', JSON.stringify(r.data));
 
     console.log('== Cliente: sin tienda, con mensajes, perfil, insignias y compartir ==');
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
