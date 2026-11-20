@@ -167,8 +167,8 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 });
 
-// PATCH /api/users/me/profile — bio, avatar y portada.
-// { bio?, avatar?, cover? } — avatar/cover: { mime, data } para
+// PATCH /api/users/me/profile — nombre, bio, avatar y portada.
+// { real_name?, bio?, avatar?, cover? } — avatar/cover: { mime, data } para
 // poner una foto nueva, null para quitarla, o no venir para
 // dejarla como está. La foto vieja se borra al reemplazarla.
 router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => {
@@ -182,6 +182,12 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
       const bio = String(req.body.bio || '').trim().slice(0, MAX_BIO);
       updates.push(`bio = $${params.length + 1}`);
       params.push(bio);
+    }
+    if (req.body.real_name !== undefined) {
+      const realName = String(req.body.real_name || '').trim().slice(0, 100);
+      if (!realName) return res.status(400).json({ error: 'El nombre no puede estar vacío.' });
+      updates.push(`real_name = $${params.length + 1}`);
+      params.push(realName);
     }
     for (const field of ['avatar', 'cover']) {
       const value = req.body[field];
@@ -402,6 +408,27 @@ router.post('/me/verification-requests/:id/approve', requireAuth, requireOwner, 
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo aprobar la solicitud.' });
+  }
+});
+
+// POST /api/users/:alias/verify — el dueño da o quita el
+// verificado directamente desde el perfil, sin que la persona
+// tenga que pedirlo (no pasa por la puerta de 500 seguidores).
+// { verified: true } para darlo, { verified: false } para
+// quitarlo. Solo el dueño.
+router.post('/:alias/verify', requireAuth, requireOwner, requireObjectBody, async (req, res) => {
+  try {
+    const alias = String(req.params.alias || '');
+    if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
+    const user = await db.get('SELECT id, alias, verified FROM users WHERE alias = $1', [alias]);
+    if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    if (isAdminAlias(user.alias)) return res.status(409).json({ error: 'El dueño ya lleva Admin y verificado.' });
+    const verified = req.body.verified !== false;
+    await db.query('UPDATE users SET verified = $1 WHERE id = $2', [verified, user.id]);
+    return res.json({ ok: true, alias: user.alias, verified });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cambiar el verificado.' });
   }
 });
 
