@@ -63,7 +63,7 @@ const {
 const { requireAuth } = require('../middleware/auth');
 const { authLimiter, recoveryLimiter } = require('../middleware/rateLimit');
 const { requireObjectBody } = require('../middleware/validate');
-const { isAdminAlias, effectiveVerified } = require('../reputation');
+const { isAdminAlias, isAdminUser, effectiveVerified } = require('../reputation');
 const mail = require('../mail');
 
 const router = express.Router();
@@ -107,8 +107,8 @@ function presentUser(user) {
     real_name: user.real_name || '',
     email: user.email || null,
     email_verified: isVerifiedFlag(user.email_verified),
-    is_admin: isAdminAlias(user.alias),
-    verified: effectiveVerified({ verified: user.verified, alias: user.alias }),
+    is_admin: isAdminUser(user),
+    verified: effectiveVerified({ verified: user.verified, alias: user.alias, rank: user.rank }),
   };
 }
 
@@ -148,9 +148,12 @@ router.post('/register', authLimiter, requireObjectBody, async (req, res) => {
     if (emailTaken) return res.status(409).json({ error: 'Ese correo ya está en uso en otra cuenta.' });
 
     const passwordHash = await hashPassword(password);
+    // El dueño nace con rango 'admin' para que siga siéndolo
+    // aunque cambie su @usuario después (el rango vive en su fila).
+    const rank = isAdminAlias(alias) ? 'admin' : 'new';
     const created = await db.query(
-      'INSERT INTO users (alias, password_hash, email, real_name) VALUES ($1, $2, $3, $4) RETURNING id, alias, real_name, email, email_verified, verified',
-      [alias, passwordHash, email, realName],
+      'INSERT INTO users (alias, password_hash, email, real_name, rank) VALUES ($1, $2, $3, $4, $5) RETURNING id, alias, real_name, email, email_verified, rank, verified',
+      [alias, passwordHash, email, realName, rank],
     );
     const user = created.rows[0];
     // El código de verificación se envía al registrarse. Sin la

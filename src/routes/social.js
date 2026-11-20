@@ -81,6 +81,7 @@ async function presentPosts(rows, reqUser) {
   const photoUrls = await photos.urlsByIds([
     ...collectAvatarIds(rows.map((r) => ({
       avatar_photo_id: r.author_avatar_photo_id,
+      rank: r.author_rank,
     }))),
     ...rows.map((r) => r.photo_id).filter(Boolean),
   ]);
@@ -135,6 +136,7 @@ async function presentPosts(rows, reqUser) {
       alias: r.author_alias,
       verified: r.author_verified,
       avatar_photo_id: r.author_avatar_photo_id,
+      rank: r.author_rank,
     }, photoUrls),
     likes_count: likeCounts.get(Number(r.id)) || 0,
     comments_count: commentCounts.get(Number(r.id)) || 0,
@@ -148,7 +150,7 @@ async function presentPosts(rows, reqUser) {
 
 const POST_SELECT = `
   SELECT p.*, u.alias AS author_alias,
-         u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id
+         u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
   FROM posts p JOIN users u ON u.id = p.author_id`;
 
 // GET /api/social/feed?tab=...
@@ -343,7 +345,7 @@ router.get('/posts/:id/reactions', optionalAuth, async (req, res) => {
     if (!post) return res.status(404).json({ error: 'Publicación no encontrada.' });
     const { rows } = await db.query(
       `SELECT pl.kind, pl.created_at, u.id, u.alias, u.verified,
-              u.avatar_photo_id
+              u.avatar_photo_id, u.rank
        FROM post_likes pl JOIN users u ON u.id = pl.user_id
        WHERE pl.post_id = $1 ORDER BY pl.created_at DESC, pl.id DESC`,
       [id],
@@ -353,7 +355,7 @@ router.get('/posts/:id/reactions', optionalAuth, async (req, res) => {
       reactions: rows.map((r) => ({
         kind: r.kind,
         created_at: r.created_at,
-        user: authorCard({ id: r.id, alias: r.alias, verified: r.verified, avatar_photo_id: r.avatar_photo_id }, photoUrls),
+        user: authorCard({ id: r.id, alias: r.alias, verified: r.verified, avatar_photo_id: r.avatar_photo_id, rank: r.rank }, photoUrls),
       })),
     });
   } catch (e) {
@@ -391,7 +393,7 @@ router.get('/posts/:id/comments', optionalAuth, async (req, res) => {
     const before = parseBefore(req);
     const params = [id];
     let sql = `SELECT c.*, u.alias AS author_alias,
-                      u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id
+                      u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
                FROM post_comments c JOIN users u ON u.id = c.author_id
                WHERE c.post_id = $1 AND c.deleted = FALSE`;
     if (before !== null) { params.push(before); sql += ` AND c.id < $${params.length}`; }
@@ -409,6 +411,7 @@ router.get('/posts/:id/comments', optionalAuth, async (req, res) => {
           alias: r.author_alias,
           verified: r.author_verified,
           avatar_photo_id: r.author_avatar_photo_id,
+          rank: r.author_rank,
         }, photoUrls),
       })),
     });
@@ -441,7 +444,7 @@ router.post('/posts/:id/comments', requireAuth, requireObjectBody, async (req, r
     }
     const row = await db.get(
       `SELECT c.*, u.alias AS author_alias,
-              u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id
+              u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
        FROM post_comments c JOIN users u ON u.id = c.author_id WHERE c.id = $1`,
       [commentId],
     );
@@ -456,6 +459,7 @@ router.post('/posts/:id/comments', requireAuth, requireObjectBody, async (req, r
           alias: row.author_alias,
           verified: row.author_verified,
           avatar_photo_id: row.author_avatar_photo_id,
+          rank: row.author_rank,
         }, photoUrls),
       },
       moderated: check.decision === 'flag',
@@ -468,7 +472,7 @@ router.post('/posts/:id/comments', requireAuth, requireObjectBody, async (req, r
 
 const STORY_SELECT = `
   SELECT s.*, u.alias AS author_alias,
-         u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id
+         u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
   FROM stories s JOIN users u ON u.id = s.author_id`;
 
 // POST /api/social/stories — historia (24 h) o reel (sin caducidad).
@@ -562,6 +566,7 @@ async function presentStories(rows, reqUser) {
         alias: r.author_alias,
         verified: r.author_verified,
         avatar_photo_id: r.author_avatar_photo_id,
+        rank: r.author_rank,
       }, photoUrls),
       likes_count: likeCounts.get(Number(r.id)) || 0,
       liked_by_me: likedIds.has(Number(r.id)),
@@ -722,7 +727,7 @@ router.get('/trends', optionalAuth, async (req, res) => {
     let suggested = [];
     if (req.user) {
       const users = await db.query(
-        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id,
+        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank,
                 (SELECT COUNT(*) FROM follows f WHERE f.followed_id = u.id) AS followers_count
          FROM users u
          WHERE u.id <> $1 AND u.id NOT IN (SELECT followed_id FROM follows WHERE follower_id = $1)
@@ -745,7 +750,7 @@ router.get('/trends', optionalAuth, async (req, res) => {
       }
     } else {
       const users = await db.query(
-        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id,
+        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank,
                 (SELECT COUNT(*) FROM follows f WHERE f.followed_id = u.id) AS followers_count
          FROM users u ORDER BY followers_count DESC, u.created_at DESC LIMIT 10`,
       );

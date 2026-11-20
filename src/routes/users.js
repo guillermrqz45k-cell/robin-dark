@@ -29,8 +29,9 @@ const express = require('express');
 const db = require('../db');
 const {
   daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime,
-  isAdminAlias, effectiveVerified,
+  isAdminAlias, isAdminUser, effectiveVerified,
 } = require('../reputation');
+const { signToken } = require('../auth');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 const photos = require('../photos');
@@ -39,7 +40,7 @@ const { authorCard, collectAvatarIds } = require('../present');
 const router = express.Router();
 const ALIAS_RE = /^[a-zA-Z0-9_.-]{3,30}$/;
 const MAX_BIO = 300;
-// El nombre real solo se puede cambiar 1 vez al mes (30 días).
+// El nombre y el @usuario solo se pueden cambiar 1 vez al mes (30 días).
 const NAME_CHANGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function parseTs(v) {
@@ -112,13 +113,13 @@ router.get('/', requireAuth, async (req, res) => {
     let rows;
     if (q) {
       rows = (await db.query(
-        `SELECT id, alias, verified, avatar_photo_id FROM users
+        `SELECT id, alias, verified, avatar_photo_id, rank FROM users
          WHERE id <> $1 AND LOWER(alias) LIKE LOWER($2) ORDER BY alias ASC LIMIT $3`,
         [req.user.id, `%${q}%`, limit],
       )).rows;
     } else {
       rows = (await db.query(
-        `SELECT id, alias, verified, avatar_photo_id FROM users
+        `SELECT id, alias, verified, avatar_photo_id, rank FROM users
          WHERE id <> $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
         [req.user.id, limit],
       )).rows;
@@ -134,7 +135,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const user = await db.get(
-      'SELECT id, alias, real_name, email, email_verified, bio, avatar_photo_id, cover_photo_id, verified, created_at FROM users WHERE id = $1',
+      'SELECT id, alias, real_name, email, email_verified, bio, avatar_photo_id, cover_photo_id, rank, verified, created_at FROM users WHERE id = $1',
       [req.user.id],
     );
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
@@ -155,8 +156,8 @@ router.get('/me', requireAuth, async (req, res) => {
         bio: user.bio || '',
         avatar_url: user.avatar_photo_id ? (photoUrls.get(Number(user.avatar_photo_id)) || null) : null,
         cover_url: user.cover_photo_id ? (photoUrls.get(Number(user.cover_photo_id)) || null) : null,
-        is_admin: isAdminAlias(user.alias),
-        verified: effectiveVerified({ verified: user.verified, alias: user.alias }),
+        is_admin: isAdminUser(user),
+        verified: effectiveVerified({ verified: user.verified, alias: user.alias, rank: user.rank }),
         member_since: user.created_at,
         ...counts,
         ...ratings,
@@ -175,7 +176,7 @@ router.get('/me', requireAuth, async (req, res) => {
 // dejarla como está. La foto vieja se borra al reemplazarla.
 router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => {
   try {
-    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, avatar_photo_id, cover_photo_id FROM users WHERE id = $1', [req.user.id]);
+    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, rank, avatar_photo_id, cover_photo_id FROM users WHERE id = $1', [req.user.id]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const updates = [];
     const params = [];
@@ -205,6 +206,39 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
         params.push(Date.now());
       }
     }
+    // El @usuario también se puede cambiar, 1 vez al mes, igual que
+    // el nombre. Si es distinto al actual y el último cambio fue
+    // hace menos de 30 días, se rechaza. Repetir el mismo no cuenta.
+    let aliasChanged = false;
+    if (req.body.alias !== undefined) {
+      const newAlias = String(req.body.alias || '').trim();
+      if (!ALIAS_RE.test(newAlias)) return res.status(400).json({ error: 'El @usuario debe tener entre 3 y 30 caracteres: letras, números, _ . -' });
+      if (newAlias !== user.alias) {
+        // Primero se avisa si el @usuario ya está en uso (es más
+        // útil saberlo aunque falte tiempo para poder cambiarlo);
+        // después se aplica el límite de 1 vez al mes.
+        const taken = await db.get('SELECT id FROM users WHERE alias = $1', [newAlias]);
+        if (taken) return res.status(409).json({ error: 'Ese @usuario ya está en uso.' });
+        const lastChange = Number(user.alias_changed_at) || 0;
+        const nextAllowed = lastChange + NAME_CHANGE_MS;
+        if (lastChange && Date.now() < nextAllowed) {
+          const date = new Date(nextAllowed).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+          return res.status(429).json({ error: `Solo puedes cambiar tu @usuario una vez al mes. Podrás cambiarlo de nuevo el ${date}.` });
+        }
+        updates.push(`alias = $${params.length + 1}`);
+        params.push(newAlias);
+        updates.push(`alias_changed_at = $${params.length + 1}`);
+        params.push(Date.now());
+        // Si el dueño cambia su @usuario, su rango 'admin' se queda
+        // en su fila (por id): se reafirma aquí por si la marca de
+        // arranque no lo había puesto.
+        if (isAdminAlias(user.alias)) {
+          updates.push(`rank = $${params.length + 1}`);
+          params.push('admin');
+        }
+        aliasChanged = true;
+      }
+    }
     for (const field of ['avatar', 'cover']) {
       const value = req.body[field];
       if (value === undefined) continue;
@@ -228,7 +262,7 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
       await db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}`, params);
     }
     const updated = await db.get(
-      'SELECT id, alias, real_name, email, email_verified, bio, avatar_photo_id, cover_photo_id, verified, created_at FROM users WHERE id = $1',
+      'SELECT id, alias, real_name, email, email_verified, bio, avatar_photo_id, cover_photo_id, rank, verified, created_at FROM users WHERE id = $1',
       [user.id],
     );
     // Foto nueva de perfil o portada: también se publica sola en
@@ -257,11 +291,14 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
         bio: updated.bio || '',
         avatar_url: updated.avatar_photo_id ? (photoUrls.get(Number(updated.avatar_photo_id)) || null) : null,
         cover_url: updated.cover_photo_id ? (photoUrls.get(Number(updated.cover_photo_id)) || null) : null,
-        is_admin: isAdminAlias(updated.alias),
-        verified: effectiveVerified({ verified: updated.verified, alias: updated.alias }),
+        is_admin: isAdminUser(updated),
+        verified: effectiveVerified({ verified: updated.verified, alias: updated.alias, rank: updated.rank }),
         member_since: updated.created_at,
       },
       published_posts: publishedPosts.length,
+      // Si cambió el @usuario, la sesión vieja lleva el alias viejo:
+      // se devuelve un token nuevo para que el cliente lo guarde.
+      ...(aliasChanged ? { token: signToken(updated) } : {}),
     });
   } catch (e) {
     console.error(e);
@@ -279,7 +316,7 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
 // que llevas. El dueño ya está verificado: no necesita pedirla.
 router.post('/me/verification', requireAuth, requireObjectBody, async (req, res) => {
   try {
-    if (isAdminAlias(req.user.alias)) {
+    if (isAdminUser(req.user)) {
       return res.status(409).json({ error: 'La cuenta del dueño ya está verificada.' });
     }
     const counts = await followCounts(req.user.id);
@@ -356,7 +393,7 @@ router.get('/me/verification', requireAuth, async (req, res) => {
 // las revisa desde su propio perfil, en una lista pequeña solo
 // para él. No hay panel de administrador.
 function requireOwner(req, res, next) {
-  if (!isAdminAlias(req.user.alias)) {
+  if (!isAdminUser(req.user)) {
     return res.status(403).json({ error: 'Solo el dueño puede ver esto.' });
   }
   return next();
@@ -436,9 +473,9 @@ router.post('/:alias/verify', requireAuth, requireOwner, requireObjectBody, asyn
   try {
     const alias = String(req.params.alias || '');
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
-    const user = await db.get('SELECT id, alias, verified FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, alias, rank, verified FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
-    if (isAdminAlias(user.alias)) return res.status(409).json({ error: 'El dueño ya lleva Admin y verificado.' });
+    if (isAdminUser(user)) return res.status(409).json({ error: 'El dueño ya lleva Admin y verificado.' });
     const verified = req.body.verified !== false;
     await db.query('UPDATE users SET verified = $1 WHERE id = $2', [verified, user.id]);
     return res.json({ ok: true, alias: user.alias, verified });
@@ -477,7 +514,7 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
     if (!ALIAS_RE.test(alias)) {
       return res.status(400).json({ error: 'Alias no válido.' });
     }
-    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, bio, avatar_photo_id, cover_photo_id, verified, created_at FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, bio, avatar_photo_id, cover_photo_id, rank, verified, created_at FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
 
     // Señales sociales de la reputación: publicaciones visibles,
@@ -499,7 +536,7 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
     const posts = Number(postsCount.n);
     const rejected = Number(rejectedRow.n);
     const responseMinutes = responseTimeMinutes(messageRows.rows, user.id);
-    const isAdmin = isAdminAlias(user.alias);
+    const isAdmin = isAdminUser(user);
     const photoUrls = await photos.urlsByIds([user.avatar_photo_id, user.cover_photo_id]);
     const counts = await followCounts(user.id);
     const ratings = await ratingStats(user.id);
@@ -538,6 +575,8 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
       // al propio dueño: es lo que usa el formulario de edición
       // para saber si el nombre se puede cambiar ya o no).
       ...(req.user && req.user.id === user.id ? { real_name_changed_at: user.real_name_changed_at ? Number(user.real_name_changed_at) : null } : {}),
+      // Igual para el @usuario: solo el dueño ve cuándo lo cambió.
+      ...(req.user && req.user.id === user.id ? { alias_changed_at: user.alias_changed_at ? Number(user.alias_changed_at) : null } : {}),
       bio: user.bio || '',
       avatar_url: user.avatar_photo_id ? (photoUrls.get(Number(user.avatar_photo_id)) || null) : null,
       cover_url: user.cover_photo_id ? (photoUrls.get(Number(user.cover_photo_id)) || null) : null,
@@ -548,7 +587,7 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
       // Antigüedad del perfil: 'nuevo' (< 30 días), 'antiguo'
       // (>= 90 días, marco dorado) o null entre medias.
       seniority: seniority(days),
-      verified: effectiveVerified({ verified: user.verified, alias: user.alias }),
+      verified: effectiveVerified({ verified: user.verified, alias: user.alias, rank: user.rank }),
       reputation: computeReputation({ days, posts, followers: counts.followers_count, rejected }),
       ...counts,
       ...ratings,
@@ -575,7 +614,7 @@ router.get('/:alias/posts', async (req, res) => {
     const before = parseBefore(req);
     const params = [user.id];
     let sql = `SELECT p.*, u.alias AS author_alias,
-                      u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id
+                      u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
                FROM posts p JOIN users u ON u.id = p.author_id
                WHERE p.author_id = $1 AND p.deleted = FALSE`;
     if (before !== null) { params.push(before); sql += ` AND p.id < $${params.length}`; }
@@ -596,6 +635,7 @@ router.get('/:alias/posts', async (req, res) => {
           alias: r.author_alias,
           verified: r.author_verified,
           avatar_photo_id: r.author_avatar_photo_id,
+          rank: r.author_rank,
         }, photoUrls),
         photo_url: r.photo_id ? (photoUrls.get(Number(r.photo_id)) || null) : null,
       })),
@@ -616,13 +656,13 @@ async function followList(req, res, direction) {
     const limit = parseLimit(req);
     const rows = direction === 'followers'
       ? (await db.query(
-        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id
+        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
          FROM follows f JOIN users u ON u.id = f.follower_id
          WHERE f.followed_id = $1 ORDER BY f.created_at DESC, f.id DESC LIMIT $2`,
         [user.id, limit],
       )).rows
       : (await db.query(
-        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id
+        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
          FROM follows f JOIN users u ON u.id = f.followed_id
          WHERE f.follower_id = $1 ORDER BY f.created_at DESC, f.id DESC LIMIT $2`,
         [user.id, limit],
@@ -650,7 +690,7 @@ router.get('/:alias/friends', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const limit = parseLimit(req);
     const { rows } = await db.query(
-      `SELECT u.id, u.alias, u.verified, u.avatar_photo_id
+      `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
        FROM follows f1 JOIN follows f2 ON f1.followed_id = f2.follower_id AND f1.follower_id = f2.followed_id
        JOIN users u ON u.id = f1.followed_id
        WHERE f1.follower_id = $1 ORDER BY f1.created_at DESC, f1.id DESC LIMIT $2`,

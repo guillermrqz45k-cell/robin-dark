@@ -17,7 +17,7 @@ const db = require('../db');
 const photos = require('../photos');
 const { optionalAuth } = require('../middleware/auth');
 const { requireIdParam } = require('../middleware/validate');
-const { isAdminAlias } = require('../reputation');
+const { isAdminUser } = require('../reputation');
 
 const router = express.Router();
 
@@ -29,7 +29,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     if (!photo) return res.status(404).json({ error: 'Foto no encontrada.' });
     if (photos.isPrivateKind(photo.kind)) {
       const user = req.user;
-      const allowed = user && (isAdminAlias(user.alias) || user.id === photo.owner_id);
+      const allowed = user && (isAdminUser(user) || user.id === photo.owner_id);
       if (!allowed) return res.status(403).json({ error: 'Esa foto es privada.' });
       res.setHeader('Cache-Control', 'no-store');
     } else {
@@ -77,7 +77,7 @@ router.delete('/:id', optionalAuth, async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Necesitas iniciar sesión.' });
     const row = await db.get('SELECT id, owner_id FROM photos WHERE id = $1', [id]);
     if (!row) return res.status(404).json({ error: 'Foto no encontrada.' });
-    const isOwner = isAdminAlias(user.alias);
+    const isOwner = isAdminUser(user);
     if (!isOwner && row.owner_id !== user.id) {
       return res.status(403).json({ error: 'Solo el dueño de la foto (o el dueño del sitio) puede borrarla.' });
     }

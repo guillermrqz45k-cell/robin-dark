@@ -18,7 +18,7 @@ const { aiLimiter } = require('../middleware/rateLimit');
 const { requireObjectBody } = require('../middleware/validate');
 const ai = require('../ai');
 const photos = require('../photos');
-const { isAdminAlias, effectiveVerified } = require('../reputation');
+const { isAdminUser, effectiveVerified } = require('../reputation');
 
 const router = express.Router();
 
@@ -44,12 +44,12 @@ router.get('/recommendations', requireAuth, async (req, res) => {
     // completa.
     const out = [];
     for (const it of items) {
-      const author = await db.get('SELECT verified FROM users WHERE id = $1', [it.author_id]);
+      const author = await db.get('SELECT verified, rank FROM users WHERE id = $1', [it.author_id]);
       if (!author) continue;
       const base = {
         ...it,
-        author_is_admin: isAdminAlias(it.author_alias),
-        author_verified: effectiveVerified({ verified: author.verified, alias: it.author_alias }),
+        author_is_admin: isAdminUser({ alias: it.author_alias, rank: author.rank }),
+        author_verified: effectiveVerified({ verified: author.verified, alias: it.author_alias, rank: author.rank }),
         author_avatar_url: it.author_avatar_photo_id ? (info.get(Number(it.author_avatar_photo_id))?.url || null) : null,
       };
       if (it.type === 'reel') {

@@ -20,7 +20,7 @@ const photos = require('../photos');
 const { requireAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 const { authorCard } = require('../present');
-const { isAdminAlias, effectiveVerified } = require('../reputation');
+const { isAdminUser, effectiveVerified } = require('../reputation');
 
 const router = express.Router();
 const MAX_BODY = 2000;
@@ -38,8 +38,8 @@ function presentMessage(row) {
     thread_id: row.thread_id,
     sender_id: row.sender_id,
     sender_alias: row.sender_alias,
-    sender_is_admin: isAdminAlias(row.sender_alias),
-    sender_verified: effectiveVerified({ verified: row.sender_verified, alias: row.sender_alias }),
+    sender_is_admin: isAdminUser({ alias: row.sender_alias, rank: row.sender_rank }),
+    sender_verified: effectiveVerified({ verified: row.sender_verified, alias: row.sender_alias, rank: row.sender_rank }),
     body: row.body,
     created_at: row.created_at,
   };
@@ -154,7 +154,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       [thread.id, req.user.id],
     );
     const r = await db.query(
-      `SELECT m.*, u.alias AS sender_alias, u.verified AS sender_verified
+      `SELECT m.*, u.alias AS sender_alias, u.verified AS sender_verified, u.rank AS sender_rank
        FROM dm_messages m JOIN users u ON u.id = m.sender_id
        WHERE m.thread_id = $1 ORDER BY m.created_at ASC, m.id ASC`,
       [thread.id],
@@ -187,11 +187,12 @@ router.post('/:id/messages', requireAuth, requireObjectBody, async (req, res) =>
        VALUES ($1, $2, $3) RETURNING id, thread_id, sender_id, body, created_at`,
       [thread.id, req.user.id, body],
     );
-    const sender = await db.get('SELECT alias, verified FROM users WHERE id = $1', [req.user.id]);
+    const sender = await db.get('SELECT alias, verified, rank FROM users WHERE id = $1', [req.user.id]);
     const row = {
       ...created.rows[0],
       sender_alias: sender ? sender.alias : req.user.alias,
       sender_verified: sender ? sender.verified : false,
+      sender_rank: sender ? sender.rank : null,
     };
     return res.status(201).json({ message: presentMessage(row) });
   } catch (e) {

@@ -29,6 +29,7 @@ const MAX_GROUP_POST_TEXT = 2000;
 const GROUP_SELECT = `
   SELECT g.*, u.alias AS creator_alias,
          u.verified AS creator_verified, u.avatar_photo_id AS creator_avatar_photo_id,
+         u.rank AS creator_rank,
          (SELECT COUNT(*) FROM group_members gm WHERE gm.group_id = g.id) AS member_count
   FROM groups g JOIN users u ON u.id = g.creator_id`;
 
@@ -55,6 +56,7 @@ async function presentGroup(row, reqUser) {
       alias: row.creator_alias,
       verified: row.creator_verified,
       avatar_photo_id: row.creator_avatar_photo_id,
+      rank: row.creator_rank,
     }, photoUrls),
     member_count: Number(row.member_count),
     is_member: isMember,
@@ -107,7 +109,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Grupo no encontrado.' });
     const group = await presentGroup(row, req.user);
     const { rows: memberRows } = await db.query(
-      `SELECT u.id, u.alias, u.verified, u.avatar_photo_id
+      `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
        FROM group_members gm JOIN users u ON u.id = gm.user_id
        WHERE gm.group_id = $1 ORDER BY gm.created_at ASC, gm.id ASC LIMIT 100`,
       [id],
@@ -175,7 +177,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 const GROUP_POST_SELECT = `
   SELECT gp.*, u.alias AS author_alias, u.verified AS author_verified,
-         u.avatar_photo_id AS author_avatar_photo_id
+         u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
   FROM group_posts gp JOIN users u ON u.id = gp.author_id`;
 
 async function isGroupMember(groupId, userId) {
@@ -198,6 +200,7 @@ async function presentGroupPosts(rows) {
       alias: r.author_alias,
       verified: r.author_verified,
       avatar_photo_id: r.author_avatar_photo_id,
+      rank: r.author_rank,
     }, photoUrls),
     photo_url: r.photo_id ? (photoUrls.get(Number(r.photo_id)) || null) : null,
   }));
