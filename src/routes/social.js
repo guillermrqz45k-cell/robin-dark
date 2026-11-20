@@ -778,7 +778,7 @@ router.get('/explore', optionalAuth, async (req, res) => {
   try {
     const limit = parseLimit(req);
     const { rows } = await db.query(
-      `${POST_SELECT} WHERE p.deleted = FALSE ORDER BY p.created_at DESC, p.id DESC LIMIT $1`,
+      `${POST_SELECT} WHERE p.deleted = FALSE AND u.disabled = FALSE ORDER BY p.created_at DESC, p.id DESC LIMIT $1`,
       [limit],
     );
     const posts = await presentPosts(rows, req.user);
@@ -787,7 +787,7 @@ router.get('/explore', optionalAuth, async (req, res) => {
     // para no acoplar las rutas entre sí.
     const weekAgo = sqlTs(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recent = await db.query(
-      'SELECT text FROM posts WHERE deleted = FALSE AND created_at > $1 ORDER BY created_at DESC LIMIT 500',
+      'SELECT p.text FROM posts p JOIN users u ON u.id = p.author_id WHERE p.deleted = FALSE AND u.disabled = FALSE AND p.created_at > $1 ORDER BY p.created_at DESC LIMIT 500',
       [weekAgo],
     );
     const counts = new Map();
