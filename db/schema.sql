@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- la cuenta se bloquea 15 minutos.
   failed_logins INTEGER NOT NULL DEFAULT 0,
   locked_until BIGINT,
+  -- Cuenta inhabilitada de forma permanente por el dueño (no
+  -- cumple las normas): no puede entrar y desaparece de la vista
+  -- de los demás (perfil, búsquedas, feed, listas).
+  disabled BOOLEAN NOT NULL DEFAULT FALSE,
   -- Rango con letras: admin / moderator / veteran / new ('new' por
   -- defecto al registrarse). El alias de ADMIN_ALIAS siempre es
   -- admin, aunque el campo diga otra cosa.
