@@ -39,6 +39,8 @@ const { authorCard, collectAvatarIds } = require('../present');
 const router = express.Router();
 const ALIAS_RE = /^[a-zA-Z0-9_.-]{3,30}$/;
 const MAX_BIO = 300;
+// El nombre real solo se puede cambiar 1 vez al mes (30 días).
+const NAME_CHANGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function parseTs(v) {
   if (v instanceof Date) return v.getTime();
@@ -173,7 +175,7 @@ router.get('/me', requireAuth, async (req, res) => {
 // dejarla como está. La foto vieja se borra al reemplazarla.
 router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => {
   try {
-    const user = await db.get('SELECT id, alias, avatar_photo_id, cover_photo_id FROM users WHERE id = $1', [req.user.id]);
+    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, avatar_photo_id, cover_photo_id FROM users WHERE id = $1', [req.user.id]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const updates = [];
     const params = [];
@@ -186,8 +188,22 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
     if (req.body.real_name !== undefined) {
       const realName = String(req.body.real_name || '').trim().slice(0, 100);
       if (!realName) return res.status(400).json({ error: 'El nombre no puede estar vacío.' });
-      updates.push(`real_name = $${params.length + 1}`);
-      params.push(realName);
+      // Solo se puede cambiar 1 vez al mes: si el nombre nuevo es
+      // distinto al actual y el último cambio fue hace menos de
+      // 30 días, se rechaza y se dice cuándo se podrá de nuevo.
+      // Repetir el mismo nombre no cuenta como cambio.
+      if (realName !== user.real_name) {
+        const lastChange = Number(user.real_name_changed_at) || 0;
+        const nextAllowed = lastChange + NAME_CHANGE_MS;
+        if (lastChange && Date.now() < nextAllowed) {
+          const date = new Date(nextAllowed).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+          return res.status(429).json({ error: `Solo puedes cambiar tu nombre una vez al mes. Podrás cambiarlo de nuevo el ${date}.` });
+        }
+        updates.push(`real_name = $${params.length + 1}`);
+        params.push(realName);
+        updates.push(`real_name_changed_at = $${params.length + 1}`);
+        params.push(Date.now());
+      }
     }
     for (const field of ['avatar', 'cover']) {
       const value = req.body[field];
@@ -461,7 +477,7 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
     if (!ALIAS_RE.test(alias)) {
       return res.status(400).json({ error: 'Alias no válido.' });
     }
-    const user = await db.get('SELECT id, alias, real_name, bio, avatar_photo_id, cover_photo_id, verified, created_at FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, bio, avatar_photo_id, cover_photo_id, verified, created_at FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
 
     // Señales sociales de la reputación: publicaciones visibles,
@@ -518,6 +534,10 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
       // sin nombre real (ninguna nueva lo es: es obligatorio al
       // registrarse) muestran su alias.
       real_name: user.real_name || user.alias,
+      // Cuándo cambió su nombre por última vez (solo se le muestra
+      // al propio dueño: es lo que usa el formulario de edición
+      // para saber si el nombre se puede cambiar ya o no).
+      ...(req.user && req.user.id === user.id ? { real_name_changed_at: user.real_name_changed_at ? Number(user.real_name_changed_at) : null } : {}),
       bio: user.bio || '',
       avatar_url: user.avatar_photo_id ? (photoUrls.get(Number(user.avatar_photo_id)) || null) : null,
       cover_url: user.cover_photo_id ? (photoUrls.get(Number(user.cover_photo_id)) || null) : null,
