@@ -37,6 +37,7 @@ const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 const photos = require('../photos');
 const { checkText, flagForReview } = require('../moderation');
 const { authorCard, collectAvatarIds } = require('../present');
+const { isAdminUser } = require('../reputation');
 
 const router = express.Router();
 const ALIAS_RE = /^[a-zA-Z0-9_.-]{3,30}$/;
@@ -149,7 +150,7 @@ async function presentPosts(rows, reqUser) {
 }
 
 const POST_SELECT = `
-  SELECT p.*, u.alias AS author_alias,
+  SELECT p.*, u.alias AS author_alias, u.disabled AS author_disabled,
          u.verified AS author_verified, u.avatar_photo_id AS author_avatar_photo_id, u.rank AS author_rank
   FROM posts p JOIN users u ON u.id = p.author_id`;
 
@@ -167,7 +168,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
       if (!req.user) return res.json({ posts: [] });
       const params = [req.user.id];
       let sql = `${POST_SELECT}
-        WHERE p.deleted = FALSE AND p.author_id IN (SELECT followed_id FROM follows WHERE follower_id = $1)`;
+        WHERE p.deleted = FALSE AND u.disabled = FALSE AND p.author_id IN (SELECT followed_id FROM follows WHERE follower_id = $1)`;
       if (before !== null) { params.push(before); sql += ` AND p.id < $${params.length}`; }
       sql += ' ORDER BY p.created_at DESC, p.id DESC LIMIT $' + (params.length + 1);
       params.push(limit);
@@ -176,14 +177,14 @@ router.get('/feed', optionalAuth, async (req, res) => {
       const weekAgo = sqlTs(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const params = [weekAgo];
       let sql = `${POST_SELECT}
-        WHERE p.deleted = FALSE AND p.created_at > $1`;
+        WHERE p.deleted = FALSE AND u.disabled = FALSE AND p.created_at > $1`;
       if (before !== null) { params.push(before); sql += ` AND p.id < $${params.length}`; }
       sql += ' ORDER BY (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) DESC, p.created_at DESC, p.id DESC LIMIT $' + (params.length + 1);
       params.push(limit);
       rows = (await db.query(sql, params)).rows;
     } else {
       const params = [];
-      let sql = `${POST_SELECT} WHERE p.deleted = FALSE`;
+      let sql = `${POST_SELECT} WHERE p.deleted = FALSE AND u.disabled = FALSE`;
       if (before !== null) { params.push(before); sql += ` AND p.id < $${params.length}`; }
       sql += ' ORDER BY p.created_at DESC, p.id DESC LIMIT $' + (params.length + 1);
       params.push(limit);
@@ -204,6 +205,10 @@ router.get('/posts/:id', optionalAuth, async (req, res) => {
     if (id === null) return;
     const row = await db.get(`${POST_SELECT} WHERE p.id = $1 AND p.deleted = FALSE`, [id]);
     if (!row) return res.status(404).json({ error: 'Publicación no encontrada.' });
+    // Publicación de una cuenta inhabilitada: no se ve (solo el
+    // dueño la ve, para revisar qué publicó).
+    const authorDisabled = row.author_disabled === true || row.author_disabled === 1 || row.author_disabled === '1';
+    if (authorDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Publicación no encontrada.' });
     const [post] = await presentPosts([row], req.user);
     return res.json({ post });
   } catch (e) {
@@ -347,7 +352,7 @@ router.get('/posts/:id/reactions', optionalAuth, async (req, res) => {
       `SELECT pl.kind, pl.created_at, u.id, u.alias, u.verified,
               u.avatar_photo_id, u.rank
        FROM post_likes pl JOIN users u ON u.id = pl.user_id
-       WHERE pl.post_id = $1 ORDER BY pl.created_at DESC, pl.id DESC`,
+       WHERE pl.post_id = $1 AND u.disabled = FALSE ORDER BY pl.created_at DESC, pl.id DESC`,
       [id],
     );
     const photoUrls = await photos.urlsByIds(collectAvatarIds(rows));
@@ -582,7 +587,7 @@ router.get('/stories', optionalAuth, async (req, res) => {
     const now = Date.now();
     const { rows } = await db.query(
       `${STORY_SELECT}
-       WHERE s.kind = 'story' AND s.deleted = FALSE AND (s.expires_at IS NULL OR s.expires_at > $1)
+       WHERE s.kind = 'story' AND s.deleted = FALSE AND u.disabled = FALSE AND (s.expires_at IS NULL OR s.expires_at > $1)
        ORDER BY s.created_at DESC, s.id DESC LIMIT 100`,
       [now],
     );
@@ -609,7 +614,7 @@ router.get('/reels', optionalAuth, async (req, res) => {
     const limit = parseLimit(req);
     const before = parseBefore(req);
     const params = [];
-    let sql = `${STORY_SELECT} WHERE s.kind = 'reel' AND s.deleted = FALSE`;
+    let sql = `${STORY_SELECT} WHERE s.kind = 'reel' AND s.deleted = FALSE AND u.disabled = FALSE`;
     if (before !== null) { params.push(before); sql += ` AND s.id < $${params.length}`; }
     sql += ' ORDER BY s.created_at DESC, s.id DESC LIMIT $' + (params.length + 1);
     params.push(limit);

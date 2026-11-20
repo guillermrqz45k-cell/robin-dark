@@ -217,7 +217,7 @@ router.get('/:id/posts', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Solo los miembros del grupo pueden ver su muro.' });
     }
     const { rows } = await db.query(
-      `${GROUP_POST_SELECT} WHERE gp.group_id = $1 AND gp.deleted = FALSE ORDER BY gp.created_at DESC, gp.id DESC LIMIT 50`,
+      `${GROUP_POST_SELECT} WHERE gp.group_id = $1 AND gp.deleted = FALSE AND u.disabled = FALSE ORDER BY gp.created_at DESC, gp.id DESC LIMIT 50`,
       [id],
     );
     return res.json({ posts: await presentGroupPosts(rows) });

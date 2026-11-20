@@ -286,7 +286,7 @@ router.post('/login', authLimiter, requireObjectBody, async (req, res) => {
     if (passwordTooLong(password)) return res.status(400).json({ error: 'La contraseña es demasiado larga.' });
 
     const user = await db.get(
-      'SELECT id, alias, real_name, email, email_verified, password_hash, rank, verified, token_version, failed_logins, locked_until FROM users WHERE email = $1',
+      'SELECT id, alias, real_name, email, email_verified, password_hash, rank, verified, token_version, failed_logins, locked_until, disabled FROM users WHERE email = $1',
       [email],
     );
     if (!user) {
@@ -316,6 +316,16 @@ router.post('/login', authLimiter, requireObjectBody, async (req, res) => {
     // bloqueo, si lo había).
     if ((Number(user.failed_logins) || 0) > 0 || user.locked_until) {
       await db.query('UPDATE users SET failed_logins = $1, locked_until = $2 WHERE id = $3', [0, null, user.id]);
+    }
+
+    // Cuenta inhabilitada de forma permanente por el dueño (no
+    // cumple las normas): no se entra, ni con la contraseña
+    // correcta, y se le dice por qué. Se comprueba DESPUÉS de la
+    // contraseña para no revelar a quien no la tiene qué cuentas
+    // están inhabilitadas.
+    if (user.disabled === true || user.disabled === 1 || user.disabled === '1') {
+      await security.logEvent({ event: 'login_disabled', ip: req.ip, userId: user.id, detail: `cuenta inhabilitada (${security.maskEmail(email)})` });
+      return res.status(403).json({ error: 'Tu cuenta ha sido inhabilitada permanentemente.', code: 'account_disabled' });
     }
 
     // La entrada queda bloqueada hasta confirmar el correo

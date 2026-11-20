@@ -111,17 +111,21 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const q = String(req.query.search || req.query.q || '').trim().slice(0, 30);
     const limit = parseLimit(req, 20, 50);
+    // Las cuentas inhabilitadas no salen en las búsquedas de los
+    // demás; el dueño sí las ve (con la marca) para poder
+    // habilitarlas de nuevo.
+    const isOwner = isAdminUser(req.user);
     let rows;
     if (q) {
       rows = (await db.query(
-        `SELECT id, alias, verified, avatar_photo_id, rank FROM users
-         WHERE id <> $1 AND LOWER(alias) LIKE LOWER($2) ORDER BY alias ASC LIMIT $3`,
+        `SELECT id, alias, verified, avatar_photo_id, rank, disabled FROM users
+         WHERE id <> $1 AND LOWER(alias) LIKE LOWER($2)${isOwner ? '' : ' AND disabled = FALSE'} ORDER BY alias ASC LIMIT $3`,
         [req.user.id, `%${q}%`, limit],
       )).rows;
     } else {
       rows = (await db.query(
-        `SELECT id, alias, verified, avatar_photo_id, rank FROM users
-         WHERE id <> $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+        `SELECT id, alias, verified, avatar_photo_id, rank, disabled FROM users
+         WHERE id <> $1${isOwner ? '' : ' AND disabled = FALSE'} ORDER BY created_at DESC, id DESC LIMIT $2`,
         [req.user.id, limit],
       )).rows;
     }
@@ -501,6 +505,40 @@ router.post('/:alias/verify', requireAuth, requireOwner, requireObjectBody, asyn
   }
 });
 
+// POST /api/users/:alias/disable — el dueño inhabilita (o vuelve
+// a habilitar) una cuenta que no cumple las normas, igual que da
+// el verificado desde el perfil. { disabled: true } para
+// inhabilitarla, { disabled: false } para devolverla. Solo el
+// dueño; el dueño no puede inhabilitarse a sí mismo.
+// - Inhabilitada: no puede entrar (403 «Tu cuenta ha sido
+//   inhabilitada permanentemente.») y su sesión muere (se sube
+//   token_version para que sus tokens viejos dejen de valer).
+// - Desaparece de la vista de los demás: su perfil da 404, no
+//   sale en búsquedas ni en el feed, ni en historias/reels, ni en
+//   las listas de seguidores, y sus publicaciones no se ven.
+// - El dueño sí sigue viendo su perfil (con «Inhabilitada») para
+//   poder habilitarla de nuevo si se equivoca.
+router.post('/:alias/disable', requireAuth, requireOwner, requireObjectBody, async (req, res) => {
+  try {
+    const alias = String(req.params.alias || '');
+    if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
+    const user = await db.get('SELECT id, alias, rank, disabled FROM users WHERE alias = $1', [alias]);
+    if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    if (isAdminUser(user)) return res.status(409).json({ error: 'No puedes inhabilitar la cuenta del dueño.' });
+    const disabled = req.body.disabled !== false;
+    if (disabled) {
+      await db.query('UPDATE users SET disabled = $1, token_version = token_version + 1 WHERE id = $2', [true, user.id]);
+    } else {
+      await db.query('UPDATE users SET disabled = $1 WHERE id = $2', [false, user.id]);
+    }
+    await security.logEvent({ event: disabled ? 'user_disabled' : 'user_enabled', ip: req.ip, userId: req.user.id, detail: `@${user.alias}` });
+    return res.json({ ok: true, alias: user.alias, disabled });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cambiar la cuenta.' });
+  }
+});
+
 // POST /api/users/me/verification-requests/:id/reject — el dueño
 // rechaza la solicitud (con nota opcional). El usuario puede
 // volver a pedirla después.
@@ -531,8 +569,14 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
     if (!ALIAS_RE.test(alias)) {
       return res.status(400).json({ error: 'Alias no válido.' });
     }
-    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, bio, avatar_photo_id, cover_photo_id, rank, verified, created_at FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, bio, avatar_photo_id, cover_photo_id, rank, verified, disabled, created_at FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    // Cuenta inhabilitada por el dueño: desaparece de la vista de
+    // los demás (como si no existiera). Solo el dueño la sigue
+    // viendo, para poder habilitarla de nuevo.
+    const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
+    const viewerIsOwner = req.user && isAdminUser(req.user);
+    if (isDisabled && !viewerIsOwner) return res.status(404).json({ error: 'Ese usuario no existe.' });
 
     // Señales sociales de la reputación: publicaciones visibles,
     // seguidores y contenidos quitados por moderación. (Robin Dark
@@ -600,6 +644,9 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
       member_since: user.created_at,
       member_days: days,
       is_admin: isAdmin,
+      // Solo llega al dueño (los demás ven 404): marca la cuenta
+      // inhabilitada para que el botón diga «Habilitar cuenta».
+      disabled: isDisabled,
       badge: badgeFor({ isAdmin, days, posts, rejected }),
       // Antigüedad del perfil: 'nuevo' (< 30 días), 'antiguo'
       // (>= 90 días, marco dorado) o null entre medias.
@@ -621,11 +668,16 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
 });
 
 // GET /api/users/:alias/posts — publicaciones del usuario.
-router.get('/:alias/posts', async (req, res) => {
+router.get('/:alias/posts', optionalAuth, async (req, res) => {
   try {
     const alias = String(req.params.alias || '');
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
-    const user = await db.get('SELECT id FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, disabled FROM users WHERE alias = $1', [alias]);
+    if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    // Cuenta inhabilitada: sus publicaciones no se ven (solo el
+    // dueño las ve, para revisarlas).
+    const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
+    if (isDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Ese usuario no existe.' });
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const limit = parseLimit(req);
     const before = parseBefore(req);
@@ -668,20 +720,25 @@ async function followList(req, res, direction) {
   try {
     const alias = String(req.params.alias || '');
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
-    const user = await db.get('SELECT id FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, disabled FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    // Cuenta inhabilitada: sus listas no se ven (solo el dueño).
+    const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
+    if (isDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const limit = parseLimit(req);
+    // Las cuentas inhabilitadas tampoco salen dentro de las listas
+    // de los demás (ni como seguidor ni como seguido).
     const rows = direction === 'followers'
       ? (await db.query(
         `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
          FROM follows f JOIN users u ON u.id = f.follower_id
-         WHERE f.followed_id = $1 ORDER BY f.created_at DESC, f.id DESC LIMIT $2`,
+         WHERE f.followed_id = $1 AND u.disabled = FALSE ORDER BY f.created_at DESC, f.id DESC LIMIT $2`,
         [user.id, limit],
       )).rows
       : (await db.query(
         `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
          FROM follows f JOIN users u ON u.id = f.followed_id
-         WHERE f.follower_id = $1 ORDER BY f.created_at DESC, f.id DESC LIMIT $2`,
+         WHERE f.follower_id = $1 AND u.disabled = FALSE ORDER BY f.created_at DESC, f.id DESC LIMIT $2`,
         [user.id, limit],
       )).rows;
     const photoUrls = await photos.urlsByIds(collectAvatarIds(rows));
@@ -693,24 +750,28 @@ async function followList(req, res, direction) {
   }
 }
 
-router.get('/:alias/followers', (req, res) => followList(req, res, 'followers'));
-router.get('/:alias/following', (req, res) => followList(req, res, 'following'));
+router.get('/:alias/followers', optionalAuth, (req, res) => followList(req, res, 'followers'));
+router.get('/:alias/following', optionalAuth, (req, res) => followList(req, res, 'following'));
 
 // GET /api/users/:alias/friends — amigos: los que se siguen
 // mutuamente (yo lo sigo y él me sigue). Es la lista de «Amigos»
 // del perfil y de la vista Amigos.
-router.get('/:alias/friends', async (req, res) => {
+router.get('/:alias/friends', optionalAuth, async (req, res) => {
   try {
     const alias = String(req.params.alias || '');
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
-    const user = await db.get('SELECT id FROM users WHERE alias = $1', [alias]);
+    const user = await db.get('SELECT id, disabled FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    // Cuenta inhabilitada: su lista de amigos no se ve (solo el
+    // dueño) y las cuentas inhabilitadas no salen en la lista.
+    const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
+    if (isDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const limit = parseLimit(req);
     const { rows } = await db.query(
       `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank
        FROM follows f1 JOIN follows f2 ON f1.followed_id = f2.follower_id AND f1.follower_id = f2.followed_id
        JOIN users u ON u.id = f1.followed_id
-       WHERE f1.follower_id = $1 ORDER BY f1.created_at DESC, f1.id DESC LIMIT $2`,
+       WHERE f1.follower_id = $1 AND u.disabled = FALSE ORDER BY f1.created_at DESC, f1.id DESC LIMIT $2`,
       [user.id, limit],
     );
     const photoUrls = await photos.urlsByIds(collectAvatarIds(rows));
