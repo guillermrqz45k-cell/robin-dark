@@ -332,6 +332,36 @@ router.delete('/posts/:id/like', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/social/posts/:id/reactions — quién reaccionó a la
+// publicación y con qué (👍/❤️/😮). Público: cualquiera puede ver
+// quién reaccionó, como en Facebook.
+router.get('/posts/:id/reactions', optionalAuth, async (req, res) => {
+  try {
+    const id = requireIdParam(req, res);
+    if (id === null) return;
+    const post = await db.get('SELECT id FROM posts WHERE id = $1 AND deleted = FALSE', [id]);
+    if (!post) return res.status(404).json({ error: 'Publicación no encontrada.' });
+    const { rows } = await db.query(
+      `SELECT pl.kind, pl.created_at, u.id, u.alias, u.verified,
+              u.avatar_photo_id
+       FROM post_likes pl JOIN users u ON u.id = pl.user_id
+       WHERE pl.post_id = $1 ORDER BY pl.created_at DESC, pl.id DESC`,
+      [id],
+    );
+    const photoUrls = await photos.urlsByIds(collectAvatarIds(rows));
+    return res.json({
+      reactions: rows.map((r) => ({
+        kind: r.kind,
+        created_at: r.created_at,
+        user: authorCard({ id: r.id, alias: r.alias, verified: r.verified, avatar_photo_id: r.avatar_photo_id }, photoUrls),
+      })),
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo ver quién reaccionó.' });
+  }
+});
+
 // POST /api/social/posts/:id/share — registra un Compartir del
 // usuario y devuelve el contador nuevo del post. Cada Compartir
 // cuenta (compartir dos veces son dos veces compartido).

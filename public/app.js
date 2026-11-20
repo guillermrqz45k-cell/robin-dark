@@ -525,7 +525,7 @@ function postCard(p) {
     </div>${me && me.id === p.author.id ? `<button type="button" class="link-btn" data-delete-post="${p.id}">Borrar</button>` : ''}</div>
     ${p.text ? `<p class="post-text">${linkify(p.text)}</p>` : ''}
     ${media}
-    <div class="post-counts"><span>👍 ${p.reactions ? p.reactions.like || 0 : 0} · ❤️ ${p.reactions ? p.reactions.love || 0 : 0} · 😮 ${p.reactions ? p.reactions.wow || 0 : 0}</span><span>💬 ${p.comments_count || 0} comentarios</span><span>↗️ ${p.shares || 0} veces compartido</span></div>
+    <div class="post-counts"><button type="button" class="link-btn" data-reactors="${p.id}">👍 ${p.reactions ? p.reactions.like || 0 : 0} · ❤️ ${p.reactions ? p.reactions.love || 0 : 0} · 😮 ${p.reactions ? p.reactions.wow || 0 : 0}</button><span>💬 ${p.comments_count || 0} comentarios</span><span>↗️ ${p.shares || 0} veces compartido</span></div>
     <div class="post-actions">
       <button type="button" class="action-btn${p.my_reaction ? ' active' : ''}" data-like-post="${p.id}">${p.my_reaction === 'love' ? '❤️ Me encanta' : p.my_reaction === 'wow' ? '😮 Me asombra' : p.my_reaction ? '👍 Me gusta' : '👍 Me gusta'}</button>
       <button type="button" class="action-btn" data-comments-post="${p.id}">💬 Comentar</button>
@@ -554,6 +554,7 @@ function bindPostCards(root) {
     else notice(r.data.error || 'No se pudo reaccionar.');
   }));
   $$('[data-comments-post]', root).forEach((b) => b.addEventListener('click', () => loadComments(Number(b.dataset.commentsPost))));
+  $$('[data-reactors]', root).forEach((b) => b.addEventListener('click', () => openReactors(Number(b.dataset.reactors))));
   $$('[data-share-post]', root).forEach((b) => b.addEventListener('click', (e) => {
     e.stopPropagation();
     openShareMenu(Number(b.dataset.sharePost), b);
@@ -564,6 +565,20 @@ function bindPostCards(root) {
     else notice(r.data.error || 'No se pudo borrar.');
   }));
   $$('[data-alias]', root).forEach((b) => b.addEventListener('click', () => openProfile(b.dataset.alias)));
+}
+
+async function openReactors(postId) {
+  const r = await api(`/api/social/posts/${postId}/reactions`);
+  if (r.status !== 200) { notice(r.data.error || 'No se pudo ver quién reaccionó.'); return; }
+  const list = r.data.reactions || [];
+  const groups = [['like', '👍 Me gusta'], ['love', '❤️ Me encanta'], ['wow', '😮 Me asombra']];
+  const body = list.length ? groups.map(([kind, label]) => {
+    const users = list.filter((x) => x.kind === kind);
+    if (!users.length) return '';
+    return `<h3 style="margin-top:12px">${label} (${users.length})</h3>` + users.map((x) => `<div class="friend-row">${avatarHtml(x.user)}<div style="flex:1"><button type="button" class="friend-name" data-alias="${esc(x.user.alias)}">${esc(x.user.alias)}</button> ${adminBadgeHtml(x.user.is_admin)}${verifiedHtml(x.user.verified)}</div></div>`).join('');
+  }).join('') : '<p class="muted">Aún nadie ha reaccionado a esta publicación.</p>';
+  showModal(`<div class="modal-head"><h2>Reacciones</h2><button type="button" class="close-btn">✕</button></div>${body}`);
+  $$('#modal-card [data-alias]').forEach((b) => b.addEventListener('click', () => { closeModal(); openProfile(b.dataset.alias); }));
 }
 
 async function loadComments(postId) {
@@ -1209,7 +1224,7 @@ async function renderPerfil() {
         <div style="flex:1;min-width:200px"><h1 class="profile-name">${esc(p.real_name || p.alias)} ${adminBadgeHtml(p.is_admin)}${verifiedHtml(p.verified)}</h1>
         <div class="muted small">@${esc(p.alias)}</div>
         <div style="margin-top:4px">${badgeHtml(p.badge)}${p.seniority === 'antiguo' ? ' <span class="badge-antiguo">★ Antiguo</span>' : ''}${p.seniority === 'nuevo' ? ' <span class="seniority-tag">Perfil nuevo</span>' : ''}</div>
-        <div class="profile-stats"><span><strong>${p.posts_count || 0}</strong> publicaciones</span><span><strong>${p.followers_count || 0}</strong> seguidores</span><span><strong>${p.following_count || 0}</strong> seguidos</span><span><strong>${p.ratings_count || 0}</strong> valoraciones</span><span>⭐ ${p.avg_stars === null || p.avg_stars === undefined ? '—' : p.avg_stars}</span></div></div>
+        <div class="profile-stats"><span><strong>${p.posts_count || 0}</strong> publicaciones</span><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.followers_count || 0}</strong> seguidores</button><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.following_count || 0}</strong> seguidos</button><span><strong>${p.ratings_count || 0}</strong> valoraciones</span><span>⭐ ${p.avg_stars === null || p.avg_stars === undefined ? '—' : p.avg_stars}</span></div></div>
       </div>
       ${p.bio ? `<p style="margin:12px 0 0">${linkify(p.bio)}</p>` : ''}
       <div class="profile-actions">
@@ -1226,6 +1241,7 @@ async function renderPerfil() {
       <div id="profile-tab"></div>
     </div></div>`;
   $$('#view-perfil [data-ptab]').forEach((b) => b.addEventListener('click', () => { profileTab = b.dataset.ptab; renderPerfilTab(); $$('#view-perfil [data-ptab]').forEach((x) => x.classList.toggle('active', x.dataset.ptab === profileTab)); }));
+  $$('#view-perfil [data-stat-tab]').forEach((b) => b.addEventListener('click', () => { profileTab = b.dataset.statTab; renderPerfilTab(); $$('#view-perfil [data-ptab]').forEach((x) => x.classList.toggle('active', x.dataset.ptab === profileTab)); }));
   const editBtn = $('#profile-edit');
   if (editBtn) editBtn.addEventListener('click', openEditProfileModal);
   const logoutBtn = $('#profile-logout');
