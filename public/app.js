@@ -1418,9 +1418,15 @@ function openEditProfileModal() {
   if (!p) return;
   let avatar = null;
   let cover = null;
+  // El nombre solo se puede cambiar 1 vez al mes: si el último
+  // cambio fue hace menos de 30 días, el campo queda bloqueado y
+  // se dice cuándo se podrá de nuevo.
+  const nextNameChange = p.real_name_changed_at ? Number(p.real_name_changed_at) + 30 * 24 * 60 * 60 * 1000 : 0;
+  const nameLocked = nextNameChange > Date.now();
+  const nextNameDate = nameLocked ? new Date(nextNameChange).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
   showModal(`<div class="modal-head"><h2>Editar perfil</h2><button type="button" class="close-btn">✕</button></div>
-    <label class="muted small">Nombre</label>
-    <input id="edit-name" maxlength="100" value="${esc(p.real_name || '')}">
+    <label class="muted small">Nombre${nameLocked ? ` (podrás cambiarlo de nuevo el ${nextNameDate})` : ' (solo se puede cambiar 1 vez al mes)'}</label>
+    <input id="edit-name" maxlength="100" value="${esc(p.real_name || '')}"${nameLocked ? ' disabled' : ''}>
     <label class="muted small">Biografía (máx. 300 caracteres)</label>
     <textarea id="edit-bio" rows="3" maxlength="300">${esc(p.bio || '')}</textarea>
     <div class="composer-actions">
@@ -1434,9 +1440,12 @@ function openEditProfileModal() {
   $('#edit-avatar').addEventListener('change', async (e) => { const m = await pickMedia(e.target.files[0]); if (m && m.kind === 'image') { avatar = m; notice('Foto de perfil elegida.'); } else if (m) notice('La foto de perfil debe ser JPG/PNG.'); });
   $('#edit-cover').addEventListener('change', async (e) => { const m = await pickMedia(e.target.files[0]); if (m && m.kind === 'image') { cover = m; notice('Foto de portada elegida.'); } else if (m) notice('La foto de portada debe ser JPG/PNG.'); });
   $('#edit-save').addEventListener('click', async () => {
-    const name = ($('#edit-name').value || '').trim();
-    if (!name) { notice('Escribe un nombre.'); return; }
-    const body = { real_name: name, bio: ($('#edit-bio').value || '').trim() };
+    const body = { bio: ($('#edit-bio').value || '').trim() };
+    if (!nameLocked) {
+      const name = ($('#edit-name').value || '').trim();
+      if (!name) { notice('Escribe un nombre.'); return; }
+      body.real_name = name;
+    }
     if (avatar) body.avatar = { mime: avatar.mime, data: avatar.data };
     if (cover) body.cover = { mime: cover.mime, data: cover.data };
     const r = await api('/api/users/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
