@@ -23,7 +23,7 @@ function read(p) {
 }
 
 const LEGAL = ['aviso-legal.html', 'privacidad.html', 'cookies.html', 'terminos.html'];
-const KEY_PHRASES = ['Guillermo Marquez', 'robindarkoficial@gmail.com', 'Ley 1581', 'rd_cookie_consent', 'Última actualización'];
+const KEY_PHRASES = ['DarkMous', 'robindarkoficial@gmail.com', 'Ley 1581', 'rd_cookie_consent', 'Última actualización'];
 
 console.log('== Páginas legales ==');
 for (const file of LEGAL) {
@@ -70,7 +70,7 @@ for (const file of LEGAL) {
   check(`el pie enlaza ${file}`, indexHtml.includes(`href="/legal/${file}"`));
 }
 check('el pie tiene el botón Configuración de cookies', indexHtml.includes('id="footer-cookie-settings"'));
-check('el pie firma © 2026 Robin Dark — Guillermo Marquez', indexHtml.includes('© 2026 Robin Dark — Guillermo Marquez'));
+check('el pie firma © 2026 Robin Dark — DarkMous', indexHtml.includes('© 2026 Robin Dark — DarkMous'));
 
 console.log('== app.js: consentimiento de cookies ==');
 const appJs = read(path.join(PUBLIC, 'app.js'));
