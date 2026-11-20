@@ -1424,9 +1424,15 @@ function openEditProfileModal() {
   const nextNameChange = p.real_name_changed_at ? Number(p.real_name_changed_at) + 30 * 24 * 60 * 60 * 1000 : 0;
   const nameLocked = nextNameChange > Date.now();
   const nextNameDate = nameLocked ? new Date(nextNameChange).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  // El @usuario también solo se puede cambiar 1 vez al mes.
+  const nextAliasChange = p.alias_changed_at ? Number(p.alias_changed_at) + 30 * 24 * 60 * 60 * 1000 : 0;
+  const aliasLocked = nextAliasChange > Date.now();
+  const nextAliasDate = aliasLocked ? new Date(nextAliasChange).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
   showModal(`<div class="modal-head"><h2>Editar perfil</h2><button type="button" class="close-btn">✕</button></div>
     <label class="muted small">Nombre${nameLocked ? ` (podrás cambiarlo de nuevo el ${nextNameDate})` : ' (solo se puede cambiar 1 vez al mes)'}</label>
     <input id="edit-name" maxlength="100" value="${esc(p.real_name || '')}"${nameLocked ? ' disabled' : ''}>
+    <label class="muted small">@ Usuario${aliasLocked ? ` (podrás cambiarlo de nuevo el ${nextAliasDate})` : ' (solo se puede cambiar 1 vez al mes)'}</label>
+    <input id="edit-alias" maxlength="30" value="${esc(p.alias || '')}"${aliasLocked ? ' disabled' : ''}>
     <label class="muted small">Biografía (máx. 300 caracteres)</label>
     <textarea id="edit-bio" rows="3" maxlength="300">${esc(p.bio || '')}</textarea>
     <div class="composer-actions">
@@ -1446,10 +1452,23 @@ function openEditProfileModal() {
       if (!name) { notice('Escribe un nombre.'); return; }
       body.real_name = name;
     }
+    if (!aliasLocked) {
+      const alias = ($('#edit-alias').value || '').trim();
+      if (!alias) { notice('Escribe un @usuario.'); return; }
+      body.alias = alias;
+    }
     if (avatar) body.avatar = { mime: avatar.mime, data: avatar.data };
     if (cover) body.cover = { mime: cover.mime, data: cover.data };
     const r = await api('/api/users/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
-    if (r.status === 200) { closeModal(); notice(r.data.published_posts ? 'Perfil actualizado. Tu foto también se publicó en el inicio.' : 'Perfil actualizado.'); renderTopbar(); renderPerfil(); }
+    if (r.status === 200) {
+      closeModal();
+      // Si cambió el @usuario, el servidor devuelve un token nuevo
+      // con el alias nuevo: se guarda y se recarga el perfil.
+      if (r.data.token) { saveSession(r.data.token, r.data.user); await loadMe(); }
+      if (r.data.user && r.data.user.alias) profileAlias = r.data.user.alias;
+      notice(r.data.published_posts ? 'Perfil actualizado. Tu foto también se publicó en el inicio.' : 'Perfil actualizado.');
+      renderTopbar(); renderPerfil();
+    }
     else notice(r.data.error || 'No se pudo guardar el perfil.');
   });
 }
