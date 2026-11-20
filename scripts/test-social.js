@@ -137,7 +137,7 @@ async function main() {
     r = await req('POST', '/api/auth/register', undefined, { real_name: 'Prueba Uno', alias: 'prueba1', password: 'clave12345', email: 'otro@example.com' });
     check('alias duplicado -> 409', r.status === 409);
     r = await req('POST', '/api/auth/register', undefined, { real_name: 'Prueba Dos', alias: 'prueba2', password: 'clave12345', email: 'prueba1@example.com' });
-    check('correo duplicado -> 409', r.status === 409);
+    check('correo duplicado -> 201 (no revela nada)', r.status === 201);
     r = await req('POST', '/api/auth/register', undefined, { real_name: 'Prueba Dos', alias: 'prueba2', password: 'clave12345' });
     check('registro sin correo -> 400', r.status === 400, JSON.stringify(r.data));
     r = await req('POST', '/api/auth/register', undefined, { alias: 'prueba2', password: 'clave12345', email: 'prueba2@example.com' });

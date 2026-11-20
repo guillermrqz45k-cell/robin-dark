@@ -16,8 +16,9 @@
 // caducado -> 400, reenviar anula el anterior), login solo por
 // correo y contraseña (por alias -> 400, contraseña mala -> 401,
 // el login queda BLOQUEADO con 403 hasta confirmar el correo y
-// funciona después de verificarlo), alias y correo duplicados
-// -> 409, y que el perfil público muestra el nombre real. NO
+// funciona después de verificarlo), alias duplicado -> 409 y
+// correo duplicado -> 201 sin revelar nada (aviso al dueño), y
+// que el perfil público muestra el nombre real. NO
 // toca el sitio público ni Railway.
 const fs = require('fs');
 const http = require('http');
@@ -174,8 +175,12 @@ async function main() {
     check('la respuesta NO trae el código en claro', Boolean(anaCode) && !registerResponse.includes(anaCode), registerResponse.slice(0, 200));
 
     console.log('== Duplicados ==');
+    // El correo duplicado NO da 409 (eso revelaría qué correos
+    // tienen cuenta): responde 201 como un registro nuevo, sin
+    // crear otra cuenta, y avisa al dueño del correo.
     r = await req('POST', '/api/auth/register', undefined, { real_name: 'Otra Ana', alias: 'ana2', email: 'ana@example.com', password: 'clave12345' });
-    check('correo duplicado -> 409', r.status === 409);
+    check('correo duplicado -> 201 (no revela nada)', r.status === 201);
+    check('correo duplicado no trae id de usuario', !r.data.user || r.data.user.id === null || r.data.user.id === undefined);
     r = await req('POST', '/api/auth/register', undefined, { real_name: 'Ana María', alias: 'ana', email: 'ana2@example.com', password: 'clave12345' });
     check('alias duplicado -> 409', r.status === 409);
 
