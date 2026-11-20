@@ -314,7 +314,7 @@ $('#pc-menu').addEventListener('click', (e) => {
   const item = MENU.find((m) => m.key === b.dataset.menu);
   if (item) item.go();
 });
-$$('.bottom-btn[data-view]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+$$('.bottom-btn[data-view]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.view === 'perfil' && !requireLogin('ver tu perfil')) return; showView(b.dataset.view); }));
 $('#bottom-create').addEventListener('click', () => {
   if (!requireLogin('publicar')) return;
   showView('inicio');
@@ -335,7 +335,7 @@ function showView(name) {
   if (name === 'reels') renderReels();
   if (name === 'ia') renderIA();
   if (name === 'notificaciones') renderNotificaciones();
-  if (name === 'perfil' && profileAlias) renderPerfil();
+  if (name === 'perfil') { if (!profileAlias && me) profileAlias = me.alias; renderPerfil(); }
 }
 
 // ---------- Polling ----------
@@ -1490,6 +1490,9 @@ async function renderNotificaciones() {
 function openAuthModal(mode) {
   let m = mode || 'login';
   let verifyEmail = '';
+  // Si el envío del código falló, el cuadro de verificación lo dice
+  // en vez de afirmar que el código se envió (fallo silencioso).
+  let verifySendFailed = false;
   // Si se llega a la verificación porque el login quedó bloqueado
   // por correo sin confirmar, se avisa de que hay que confirmarlo
   // para poder entrar. En los dos casos (registro o login
@@ -1548,15 +1551,16 @@ function openAuthModal(mode) {
           verifyFromLogin = false;
           m = 'verify';
           verifyEmail = email;
+          verifySendFailed = !(r.data.email_verification && r.data.email_verification.code_sent);
           render();
-          if (!(r.data.email_verification && r.data.email_verification.code_sent)) {
+          if (verifySendFailed) {
             notice('No pudimos enviarte el código por correo; usa «Reenviar código» para pedirlo de nuevo.');
           }
         } else $('#auth-error').textContent = r.data.error || 'No se pudo crear la cuenta.';
       });
     } else if (m === 'verify') {
       showModal(`<div class="modal-head"><h2>Verifica tu correo</h2><button type="button" class="close-btn">✕</button></div>
-      <p class="muted">${verifyFromLogin ? 'Para poder entrar, primero confirma tu correo. ' : ''}Te enviamos un código de 6 dígitos a <strong>${esc(verifyEmail || '')}</strong> (caduca en 15 minutos). Ponlo aquí:</p>
+      <p class="muted">${verifyFromLogin ? 'Para poder entrar, primero confirma tu correo. ' : ''}Te enviamos un código de 6 dígitos a <strong>${esc(verifyEmail || '')}</strong> (caduca en 15 minutos). Ponlo aquí:</p>${verifySendFailed ? '<p style="color:var(--danger)">No pudimos enviarte el código por correo. Toca «Reenviar código» para pedirlo de nuevo.</p>' : ''}
       <form id="auth-form"><label class="muted small">Código de 6 dígitos</label><input id="verify-code" inputmode="numeric" maxlength="6" placeholder="123456"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Verificar correo</button></form>
       <p class="auth-switch"><button type="button" class="link-btn" id="verify-resend">Reenviar código</button> · <button type="button" class="link-btn" id="verify-later">Lo haré después</button></p>`);
       $('#verify-later').addEventListener('click', () => {
@@ -1568,8 +1572,15 @@ function openAuthModal(mode) {
       });
       $('#verify-resend').addEventListener('click', async () => {
         const rr = await api('/api/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email: verifyEmail }) });
-        if (rr.status === 200) notice('Si ese correo está registrado y aún no está verificado, te enviamos un código.');
-        else notice(rr.data.error || 'No se pudo reenviar el código.');
+        if (rr.status === 200) {
+          verifySendFailed = false;
+          $('#auth-error').textContent = '';
+          notice('Si ese correo está registrado y aún no está verificado, te enviamos un código.');
+        } else {
+          verifySendFailed = true;
+          $('#auth-error').textContent = rr.data.error || 'No se pudo reenviar el código.';
+          notice(rr.data.error || 'No se pudo reenviar el código.');
+        }
       });
       $('#auth-form').addEventListener('submit', async (e) => {
         e.preventDefault();
