@@ -59,6 +59,7 @@ const {
   cleanEmail,
   validEmail,
   hashCode,
+  stripHtml,
 } = require('../auth');
 const { requireAuth } = require('../middleware/auth');
 const { authLimiter, recoveryLimiter } = require('../middleware/rateLimit');
@@ -69,6 +70,9 @@ const security = require('../security');
 
 const router = express.Router();
 const RESET_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutos
+const MAX_FAILED_LOGINS = 5; // intentos fallidos con la misma cuenta antes de bloquearla
+const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutos de bloqueo por cuenta
+const MAX_FAILED_CODES = 5; // códigos de verificación malos por cuenta en 15 minutos
 const RESET_GENERIC = 'Si ese correo está registrado, te enviamos un código de recuperación.';
 const RESEND_GENERIC = 'Si ese correo está registrado y aún no está verificado, te enviamos un código.';
 
@@ -84,7 +88,7 @@ function resendReply(res) {
 }
 
 function cleanRealName(name) {
-  return String(name || '').trim().slice(0, 100);
+  return stripHtml(String(name || '').trim()).slice(0, 100);
 }
 
 function isVerifiedFlag(value) {
@@ -146,7 +150,24 @@ router.post('/register', authLimiter, requireObjectBody, async (req, res) => {
     const existing = await db.get('SELECT id FROM users WHERE alias = $1', [alias]);
     if (existing) return res.status(409).json({ error: 'Ese alias ya está en uso. Elige otro.' });
     const emailTaken = await db.get('SELECT id FROM users WHERE email = $1', [email]);
-    if (emailTaken) return res.status(409).json({ error: 'Ese correo ya está en uso en otra cuenta.' });
+    if (emailTaken) {
+      // No se revela que el correo ya existe (un 409 lo delataría
+      // y permitiría enumerar qué correos tienen cuenta): se avisa
+      // al dueño del correo y se responde igual que un registro
+      // nuevo, para que desde fuera no se note la diferencia. El
+      // dueño del correo recibe el aviso de que alguien intentó
+      // registrarse con su correo y que entre con su contraseña.
+      let noticeSent = false;
+      if (mail.isConfigured()) {
+        const sent = await mail.sendMail({ to: email, ...mail.accountExistsMail() });
+        noticeSent = sent.ok;
+      }
+      await security.logEvent({ event: 'register_email_taken', ip: req.ip, userId: emailTaken.id, detail: security.maskEmail(email) });
+      return res.status(201).json({
+        user: { id: null, alias, real_name: realName, email, email_verified: false, is_admin: false, verified: false },
+        email_verification: { required: true, code_sent: noticeSent },
+      });
+    }
 
     const passwordHash = await hashPassword(password);
     // El dueño nace con rango 'admin' para que siga siéndolo
@@ -195,6 +216,14 @@ router.post('/verify-email', recoveryLimiter, requireObjectBody, async (req, res
 
     const user = await db.get('SELECT id, email_verified FROM users WHERE email = $1', [email]);
     if (!user) return bad();
+    // Frenar por cuenta (no solo por IP) que alguien adivine el
+    // código: 5 códigos malos con esta cuenta en 15 minutos y se
+    // bloquea el intento (el código real sigue valiendo después).
+    const failedCodes = await security.countEvents('verify_code_failed', user.id, RESET_CODE_TTL_MS);
+    if (failedCodes >= MAX_FAILED_CODES) {
+      await security.logEvent({ event: 'rate_limited', ip: req.ip, userId: user.id, detail: `código de verificación (${security.maskEmail(email)})` });
+      return res.status(429).json({ error: 'Demasiados intentos con este correo. Espera 15 minutos e inténtalo de nuevo.' });
+    }
     const row = await db.get(
       `SELECT * FROM email_verification_codes WHERE user_id = $1 AND used = $2
        ORDER BY created_at DESC, id DESC LIMIT 1`,
@@ -257,7 +286,7 @@ router.post('/login', authLimiter, requireObjectBody, async (req, res) => {
     if (passwordTooLong(password)) return res.status(400).json({ error: 'La contraseña es demasiado larga.' });
 
     const user = await db.get(
-      'SELECT id, alias, real_name, email, email_verified, password_hash, rank, verified FROM users WHERE email = $1',
+      'SELECT id, alias, real_name, email, email_verified, password_hash, rank, verified, token_version, failed_logins, locked_until FROM users WHERE email = $1',
       [email],
     );
     if (!user) {
@@ -267,10 +296,26 @@ router.post('/login', authLimiter, requireObjectBody, async (req, res) => {
       await security.logEvent({ event: 'login_failed', ip: req.ip, userId: null, detail: `correo no registrado (${security.maskEmail(email)})` });
       return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
     }
+    // Bloqueo por cuenta: tras 5 intentos fallidos con esta misma
+    // cuenta, se bloquea 15 minutos aunque el ataque venga de
+    // muchas IPs (el límite por IP solo no basta contra un ataque
+    // distribuido). No se comprueba la contraseña estando bloqueado.
+    if (user.locked_until && Number(user.locked_until) > Date.now()) {
+      await security.logEvent({ event: 'login_blocked', ip: req.ip, userId: user.id, detail: `cuenta bloqueada (${security.maskEmail(email)})` });
+      return res.status(429).json({ error: 'Demasiados intentos con esta cuenta. Espera 15 minutos e inténtalo de nuevo.' });
+    }
     const ok = await checkPassword(password, user.password_hash);
     if (!ok) {
+      const failed = (Number(user.failed_logins) || 0) + 1;
+      const lockedUntil = failed >= MAX_FAILED_LOGINS ? Date.now() + LOCKOUT_MS : null;
+      await db.query('UPDATE users SET failed_logins = $1, locked_until = $2 WHERE id = $3', [failed, lockedUntil, user.id]);
       await security.logEvent({ event: 'login_failed', ip: req.ip, userId: user.id, detail: `contraseña incorrecta (${security.maskEmail(email)})` });
       return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+    }
+    // Entrada correcta: se borran los fallos acumulados (y el
+    // bloqueo, si lo había).
+    if ((Number(user.failed_logins) || 0) > 0 || user.locked_until) {
+      await db.query('UPDATE users SET failed_logins = $1, locked_until = $2 WHERE id = $3', [0, null, user.id]);
     }
 
     // La entrada queda bloqueada hasta confirmar el correo
@@ -384,7 +429,10 @@ router.post('/reset', recoveryLimiter, requireObjectBody, async (req, res) => {
     );
     if (!marked.rowCount) return bad();
     const passwordHash = await hashPassword(password);
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, user.id]);
+    // Al cambiar la contraseña, los tokens viejos dejan de valer
+    // (la versión del token sube) y se quita el bloqueo por
+    // cuenta, para que el dueño pueda entrar con su clave nueva.
+    await db.query('UPDATE users SET password_hash = $1, token_version = token_version + 1, failed_logins = $2, locked_until = $3 WHERE id = $4', [passwordHash, 0, null, user.id]);
     await security.logEvent({ event: 'password_reset', ip: req.ip, userId: user.id, detail: security.maskEmail(email) });
     return res.json({ ok: true, message: 'Contraseña cambiada. Ya puedes entrar con tu contraseña nueva.' });
   } catch (e) {

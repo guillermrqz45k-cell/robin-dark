@@ -31,7 +31,7 @@ const {
   daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime,
   isAdminAlias, isAdminUser, effectiveVerified,
 } = require('../reputation');
-const { signToken } = require('../auth');
+const { signToken, stripHtml } = require('../auth');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 const photos = require('../photos');
@@ -177,18 +177,18 @@ router.get('/me', requireAuth, async (req, res) => {
 // dejarla como está. La foto vieja se borra al reemplazarla.
 router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => {
   try {
-    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, rank, avatar_photo_id, cover_photo_id FROM users WHERE id = $1', [req.user.id]);
+    const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, rank, token_version, avatar_photo_id, cover_photo_id FROM users WHERE id = $1', [req.user.id]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const updates = [];
     const params = [];
     const newPhotos = [];
     if (req.body.bio !== undefined) {
-      const bio = String(req.body.bio || '').trim().slice(0, MAX_BIO);
+      const bio = stripHtml(String(req.body.bio || '').trim()).slice(0, MAX_BIO);
       updates.push(`bio = $${params.length + 1}`);
       params.push(bio);
     }
     if (req.body.real_name !== undefined) {
-      const realName = String(req.body.real_name || '').trim().slice(0, 100);
+      const realName = stripHtml(String(req.body.real_name || '').trim()).slice(0, 100);
       if (!realName) return res.status(400).json({ error: 'El nombre no puede estar vacío.' });
       // Solo se puede cambiar 1 vez al mes: si el nombre nuevo es
       // distinto al actual y el último cambio fue hace menos de
@@ -329,7 +329,7 @@ router.post('/me/verification', requireAuth, requireObjectBody, async (req, res)
         required: 500,
       });
     }
-    const realName = String(req.body.real_name || '').trim().slice(0, 100);
+    const realName = stripHtml(String(req.body.real_name || '').trim()).slice(0, 100);
     if (realName.length < 2) return res.status(400).json({ error: 'Pon tu nombre real (mínimo 2 caracteres).' });
     if (req.body.document === undefined || req.body.document === null) {
       return res.status(400).json({ error: 'Falta la foto del documento.' });
