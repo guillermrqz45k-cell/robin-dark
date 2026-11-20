@@ -160,6 +160,10 @@ async function init() {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_photo_id INTEGER;`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_photo_id INTEGER;`);
+    // Cambio de nombre 1 vez al mes (2026-11-20): cuándo se cambió
+    // el nombre real por última vez, en milisegundos (BIGINT, igual
+    // en Postgres y SQLite). NULL = nunca se ha cambiado.
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS real_name_changed_at BIGINT;`);
     try {
       await pool.query(`ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);`);
     } catch (e) {
@@ -524,6 +528,9 @@ async function init() {
     }
     if (!userCols2.some((c) => c.name === 'cover_photo_id')) {
       sqlite.exec(`ALTER TABLE users ADD COLUMN cover_photo_id INTEGER;`);
+    }
+    if (!userCols2.some((c) => c.name === 'real_name_changed_at')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN real_name_changed_at INTEGER;`);
     }
     sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email);`);
     sqlite.exec(`
