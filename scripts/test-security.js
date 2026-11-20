@@ -206,6 +206,11 @@ async function main() {
     check('registro NO devuelve token de sesión', !a.register.data.token);
     const o = await registerAndLogin(owner);
     check('dueño registrado y con sesión', o.register.status === 201 && Boolean(o.token));
+    // El dueño ya no nace admin: se hace admin con el nuevo
+    // endpoint (solo el dueño puede dar admin, y en una base
+    // limpia el dueño se lo da a sí mismo).
+    const grantAdmin = await req('POST', '/api/users/jefe/admin', o.token, { admin: true });
+    check('el dueño se hace admin con el nuevo endpoint', grantAdmin.status === 200 && grantAdmin.data.admin === true, JSON.stringify(grantAdmin.data));
 
     const bad1 = await req('POST', '/api/auth/login', undefined, { email: author.email, password: 'mala1234' });
     const bad2 = await req('POST', '/api/auth/login', undefined, { email: author.email, password: 'mala1234' });

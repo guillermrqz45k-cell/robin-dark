@@ -202,6 +202,11 @@ async function main() {
     check('autora registrada y con sesión', a.register.status === 201 && Boolean(a.token));
     const o = await registerAndLogin(owner);
     check('dueño registrado y con sesión', o.register.status === 201 && Boolean(o.token));
+    // El dueño ya no nace admin: se hace admin con el nuevo
+    // endpoint (solo el dueño puede dar admin, y en una base
+    // limpia el dueño se lo da a sí mismo).
+    const grant = await req('POST', '/api/users/jefe/admin', o.token, { admin: true });
+    check('el dueño se hace admin con el nuevo endpoint', grant.status === 200 && grant.data.admin === true, JSON.stringify(grant.data));
     const me1 = await req('GET', '/api/auth/me', a.token);
     check('token viejo vale antes del cambio', me1.status === 200);
     const forgot = await req('POST', '/api/auth/forgot', undefined, { email: author.email });

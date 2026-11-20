@@ -311,6 +311,11 @@ async function main() {
     const owner = await registerAndLogin({ real_name: 'Jefe', alias: 'jefe', email: 'jefe@example.com', password: 'clave12345' });
     check('registro del dueño -> 201', owner.register.status === 201, JSON.stringify(owner.register.data));
     const ownerTok = owner.token;
+    // El dueño ya no nace admin: se hace admin con el nuevo
+    // endpoint (solo el dueño puede dar admin, y en una base
+    // limpia el dueño se lo da a sí mismo).
+    const grant = await req('POST', '/api/users/jefe/admin', ownerTok, { admin: true });
+    check('el dueño se hace admin con el nuevo endpoint', grant.status === 200 && grant.data.admin === true, JSON.stringify(grant.data));
     r = await req('GET', '/api/users/me/verification-requests', ownerTok);
     check('el dueño ve la lista de solicitudes', r.status === 200 && r.data.requests.length === 1
       && r.data.requests[0].real_name === 'Prueba Uno', JSON.stringify(r.data));

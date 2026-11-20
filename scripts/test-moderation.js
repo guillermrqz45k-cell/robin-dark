@@ -155,6 +155,11 @@ async function main() {
     const v = await registerAndLogin(victim);
     const m = await registerAndLogin(viewer);
     check('dueño registrado y con sesión', Boolean(o.token));
+    // El dueño ya no nace admin: se hace admin con el nuevo
+    // endpoint (solo el dueño puede dar admin, y en una base
+    // limpia el dueño se lo da a sí mismo).
+    const grant = await req('POST', '/api/users/jefe/admin', o.token, { admin: true });
+    check('el dueño se hace admin con el nuevo endpoint', grant.status === 200 && grant.data.admin === true, JSON.stringify(grant.data));
     check('víctima registrada y con sesión', Boolean(v.token));
     check('espectador registrado y con sesión', Boolean(m.token));
 

@@ -106,6 +106,11 @@ async function main() {
     check('registra seguidor y entra verificado', follower.register.status === 201 && Boolean(follower.token));
     const adminUser = await registerAndLogin({ real_name: 'Jefe', alias: 'jefe', email: 'jefe@example.com', password: 'secreto123' });
     check('registra la cuenta del dueño (alias de admin) y entra verificada', adminUser.register.status === 201 && Boolean(adminUser.token));
+    // El dueño ya no nace admin: se hace admin con el nuevo
+    // endpoint (solo el dueño puede dar admin, y en una base
+    // limpia el dueño se lo da a sí mismo).
+    const grant = await req('POST', '/api/users/jefe/admin', adminUser.token, { admin: true });
+    check('el dueño se hace admin con el nuevo endpoint', grant.status === 200 && grant.data.admin === true, JSON.stringify(grant.data));
     const authorTok = author.token;
     const followerTok = follower.token;
 
