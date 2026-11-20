@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "test": "node scripts/test-auth-realname.js; R0=$?; node scripts/test-badges.js; R1=$?; node scripts/test-profile.js; R2=$?; node scripts/test-social.js; R3=$?; node scripts/test-groups-dm.js; R4=$?; exit $((R0 || R1 || R2 || R3 || R4))"
+    "test": "node scripts/test-auth-realname.js; R0=$?; node scripts/test-badges.js; R1=$?; node scripts/test-profile.js; R2=$?; node scripts/test-social.js; R3=$?; node scripts/test-groups-dm.js; R4=$?; node scripts/test-legal.js; R5=$?; exit $((R0 || R1 || R2 || R3 || R4 || R5))"
   },
   "type": "commonjs",
   "version": "1.0.0",
