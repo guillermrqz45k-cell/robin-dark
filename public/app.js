@@ -95,6 +95,7 @@ function showModal(html, wide) {
 }
 function closeModal() { $('#modal').hidden = true; }
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -1491,7 +1492,7 @@ function openAuthModal(mode) {
   let verifyFromLogin = false;
   const render = () => {
     if (m === 'login') {
-      showModal(`<div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
+      showModal(`<div style="display:flex;justify-content:flex-end"><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true" aria-label="Cerrar">✕</button></div><div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
       <p class="ghost-greeting">¡Buuu! ¡Hola!</p><p class="muted">Entra a Robin Dark con tu correo y tu contraseña.</p></div>
       <form id="auth-form"><label class="muted small">Correo</label><input id="auth-login" type="email" autocomplete="username" placeholder="correo@example.com"><label class="muted small">Contraseña</label><input id="auth-pass" type="password" autocomplete="current-password" placeholder="Contraseña"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Entrar</button></form>
       <p class="auth-switch"><button type="button" class="link-btn" id="auth-forgot">¿Olvidaste tu contraseña?</button></p>
@@ -1521,7 +1522,7 @@ function openAuthModal(mode) {
         } else $('#auth-error').textContent = r.data.error || 'No se pudo entrar.';
       });
     } else if (m === 'register') {
-      showModal(`<div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
+      showModal(`<div style="display:flex;justify-content:flex-end"><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true" aria-label="Cerrar">✕</button></div><div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
       <p class="ghost-greeting">¡Buuu! Crea tu cuenta</p><p class="muted">Con tu nombre real, tu correo y una contraseña. Te enviamos un código de verificación a tu correo.</p></div>
       <form id="auth-form"><label class="muted small">Nombre real</label><input id="auth-realname" autocomplete="name" placeholder="Tu nombre real" maxlength="100"><label class="muted small">Alias (@usuario)</label><input id="auth-alias" autocomplete="username" placeholder="alias" maxlength="30"><label class="muted small">Correo</label><input id="auth-email" type="email" autocomplete="email" placeholder="correo@example.com"><label class="muted small">Contraseña (6 o más caracteres)</label><input id="auth-pass" type="password" autocomplete="new-password" placeholder="Contraseña"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Crear cuenta nueva</button></form>
       <p class="auth-switch">¿Ya tienes cuenta? <button type="button" class="link-btn" id="auth-to-login">Entrar</button></p>`);
