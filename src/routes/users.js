@@ -177,6 +177,7 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const updates = [];
     const params = [];
+    const newPhotos = [];
     if (req.body.bio !== undefined) {
       const bio = String(req.body.bio || '').trim().slice(0, MAX_BIO);
       updates.push(`bio = $${params.length + 1}`);
@@ -197,6 +198,7 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
         if (oldId) await photos.deletePhoto(Number(oldId));
         updates.push(`${col} = $${params.length + 1}`);
         params.push(saved.id);
+        newPhotos.push({ field, mime: decoded.mime, buffer: decoded.buffer });
       }
     }
     if (updates.length) {
@@ -207,6 +209,21 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
       'SELECT id, alias, real_name, email, email_verified, bio, avatar_photo_id, cover_photo_id, verified, created_at FROM users WHERE id = $1',
       [user.id],
     );
+    // Foto nueva de perfil o portada: también se publica sola en
+    // el inicio y en el perfil, como en Facebook ("actualizó su
+    // foto de perfil/portada"). Se guarda una copia para la
+    // publicación para que la foto no se pierda de la publicación
+    // cuando el perfil cambie otra vez.
+    const publishedPosts = [];
+    for (const np of newPhotos) {
+      const postPhoto = await photos.savePhoto({ ownerId: user.id, kind: 'post', mime: np.mime, buffer: np.buffer });
+      const text = np.field === 'avatar' ? 'actualizó su foto de perfil.' : 'actualizó su foto de portada.';
+      const created = await db.query(
+        `INSERT INTO posts (author_id, text, feeling, photo_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [user.id, text, '', postPhoto.id],
+      );
+      publishedPosts.push(created.rows[0].id);
+    }
     const photoUrls = await photos.urlsByIds([updated.avatar_photo_id, updated.cover_photo_id]);
     return res.json({
       user: {
@@ -222,6 +239,7 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
         verified: effectiveVerified({ verified: updated.verified, alias: updated.alias }),
         member_since: updated.created_at,
       },
+      published_posts: publishedPosts.length,
     });
   } catch (e) {
     console.error(e);
