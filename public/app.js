@@ -1229,7 +1229,7 @@ async function renderPerfil() {
       ${p.bio ? `<p style="margin:12px 0 0">${linkify(p.bio)}</p>` : ''}
       <div class="profile-actions">
         ${isOwn ? `<button type="button" class="cta" id="profile-edit">Editar perfil</button><button type="button" class="ghost-btn" id="profile-logout">Cerrar sesión</button>`
-          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>`}
+          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>${me && me.is_admin ? (p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">✓ Dar verificado</button>`) : ''}`}
       </div>
       ${p.is_friend ? `<p class="muted small">👥 Son amigos (se siguen mutuamente) · ${p.mutual_follows || 0} amigos en común</p>` : ''}
       <div class="tabs">
@@ -1259,6 +1259,13 @@ async function renderPerfil() {
     const rr = await api('/api/chat', { method: 'POST', body: JSON.stringify({ alias: p.alias }) });
     if (rr.status === 201 || rr.status === 200) { showView('mensajes'); openChat(rr.data.thread.id, p.alias); }
     else notice(rr.data.error || 'No se pudo abrir el chat.');
+  });
+  const verifyBtn = $('#profile-verify');
+  if (verifyBtn) verifyBtn.addEventListener('click', async () => {
+    const give = !p.verified;
+    const rr = await api(`/api/users/${encodeURIComponent(p.alias)}/verify`, { method: 'POST', body: JSON.stringify({ verified: give }) });
+    if (rr.status === 200) { notice(give ? `Ahora @${p.alias} está verificado.` : `Se quitó el verificado a @${p.alias}.`); renderPerfil(); }
+    else notice(rr.data.error || 'No se pudo cambiar el verificado.');
   });
   await renderPerfilTab();
 }
@@ -1412,6 +1419,8 @@ function openEditProfileModal() {
   let avatar = null;
   let cover = null;
   showModal(`<div class="modal-head"><h2>Editar perfil</h2><button type="button" class="close-btn">✕</button></div>
+    <label class="muted small">Nombre</label>
+    <input id="edit-name" maxlength="100" value="${esc(p.real_name || '')}">
     <label class="muted small">Biografía (máx. 300 caracteres)</label>
     <textarea id="edit-bio" rows="3" maxlength="300">${esc(p.bio || '')}</textarea>
     <div class="composer-actions">
@@ -1425,7 +1434,9 @@ function openEditProfileModal() {
   $('#edit-avatar').addEventListener('change', async (e) => { const m = await pickMedia(e.target.files[0]); if (m && m.kind === 'image') { avatar = m; notice('Foto de perfil elegida.'); } else if (m) notice('La foto de perfil debe ser JPG/PNG.'); });
   $('#edit-cover').addEventListener('change', async (e) => { const m = await pickMedia(e.target.files[0]); if (m && m.kind === 'image') { cover = m; notice('Foto de portada elegida.'); } else if (m) notice('La foto de portada debe ser JPG/PNG.'); });
   $('#edit-save').addEventListener('click', async () => {
-    const body = { bio: ($('#edit-bio').value || '').trim() };
+    const name = ($('#edit-name').value || '').trim();
+    if (!name) { notice('Escribe un nombre.'); return; }
+    const body = { real_name: name, bio: ($('#edit-bio').value || '').trim() };
     if (avatar) body.avatar = { mime: avatar.mime, data: avatar.data };
     if (cover) body.cover = { mime: cover.mime, data: cover.data };
     const r = await api('/api/users/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
