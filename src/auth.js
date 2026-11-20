@@ -59,7 +59,11 @@ function checkPasswordDummy(password) {
 }
 
 function signToken(user, extra = {}) {
-  return jwt.sign({ id: user.id, alias: user.alias, ...extra }, SECRET, {
+  // El rango viaja en el token para que el dueño siga siendo Admin
+  // aunque cambie su @usuario (el rango vive en su fila, por id).
+  // Los tokens viejos no lo llevan: en ese caso el Admin se
+  // reconoce por el alias, como antes.
+  return jwt.sign({ id: user.id, alias: user.alias, rank: user.rank, ...extra }, SECRET, {
     expiresIn: JWT_EXPIRES,
     algorithm: 'HS256',
   });

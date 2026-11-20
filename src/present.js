@@ -6,11 +6,12 @@
 // photos.urlsByIds (un Map id → url) para no hacer una consulta
 // por autor en cada lista.
 //
-// La tarjeta del autor lleva: alias, is_admin (el dueño, alias de
-// ADMIN_ALIAS: insignia especial «Admin» + ✓ Verificado) y
-// verified. NO hay rangos con letras (A/M/V/N): se quitaron del
-// port por decisión del dueño (2026-11-20).
-const { isAdminAlias, effectiveVerified } = require('./reputation');
+// La tarjeta del autor lleva: alias, is_admin (el dueño: rango
+// 'admin' en su fila o alias de ADMIN_ALIAS — el rango es lo que
+// sobrevive a un cambio de @usuario) y verified. NO hay rangos
+// con letras (A/M/V/N): se quitaron del port por decisión del
+// dueño (2026-11-20).
+const { isAdminUser, effectiveVerified } = require('./reputation');
 
 function authorCard(row, photoUrls = new Map()) {
   if (!row) return null;
@@ -18,8 +19,8 @@ function authorCard(row, photoUrls = new Map()) {
   return {
     id: row.id,
     alias: row.alias,
-    is_admin: isAdminAlias(row.alias),
-    verified: effectiveVerified({ verified: row.verified, alias: row.alias }),
+    is_admin: isAdminUser(row),
+    verified: effectiveVerified({ verified: row.verified, alias: row.alias, rank: row.rank }),
     avatar_url: avatarId ? (photoUrls.get(avatarId) || null) : null,
   };
 }

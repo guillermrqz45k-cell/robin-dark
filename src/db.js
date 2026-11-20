@@ -112,6 +112,13 @@ async function init() {
       if (!/already exists/i.test(e.message || '')) throw e;
     }
     await pool.query(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
+    // El dueño se marca por rango, no solo por alias (2026-11-20):
+    // si cambia su @usuario, sigue siendo Admin porque el rango
+    // vive en su fila (por id). Se marca al arrancar, sin borrar
+    // nada; es idempotente.
+    if (process.env.ADMIN_ALIAS) {
+      await pool.query(`UPDATE users SET rank = 'admin' WHERE alias = $1`, [process.env.ADMIN_ALIAS]);
+    }
     // Migración stock (2026-11-16): un anuncio ya no es de una sola
     // unidad. Bases ya creadas (Railway) no tienen la columna stock
     // ni el estado 'agotado' en el CHECK. Se añaden sin borrar nada:
@@ -164,6 +171,7 @@ async function init() {
     // el nombre real por última vez, en milisegundos (BIGINT, igual
     // en Postgres y SQLite). NULL = nunca se ha cambiado.
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS real_name_changed_at BIGINT;`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alias_changed_at BIGINT;`);
     try {
       await pool.query(`ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);`);
     } catch (e) {
@@ -467,6 +475,13 @@ async function init() {
       sqlite.exec(`ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;`);
     }
     sqlite.exec(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
+    // El dueño se marca por rango, no solo por alias (2026-11-20):
+    // si cambia su @usuario, sigue siendo Admin porque el rango
+    // vive en su fila (por id). Se marca al arrancar, sin borrar
+    // nada; es idempotente.
+    if (process.env.ADMIN_ALIAS) {
+      sqlite.prepare(`UPDATE users SET rank = 'admin' WHERE alias = ?`).run(process.env.ADMIN_ALIAS);
+    }
     // Migración stock en SQLite (bases locales ya creadas):
     // - Se elimina el índice único parcial de pedidos por anuncio.
     // - Si la tabla listings aún no tiene la columna stock, se añade
@@ -531,6 +546,9 @@ async function init() {
     }
     if (!userCols2.some((c) => c.name === 'real_name_changed_at')) {
       sqlite.exec(`ALTER TABLE users ADD COLUMN real_name_changed_at INTEGER;`);
+    }
+    if (!userCols2.some((c) => c.name === 'alias_changed_at')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN alias_changed_at INTEGER;`);
     }
     sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email);`);
     sqlite.exec(`

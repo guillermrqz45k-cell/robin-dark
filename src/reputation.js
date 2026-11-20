@@ -22,8 +22,11 @@
 // = 10 + 20 + 10 + 10 = 50.
 //
 // Insignias del perfil (en este orden, la primera que se cumpla):
-//   Admin:       el alias es el ADMIN_ALIAS de entorno (el dueño
-//                del sitio): insignia especial dorada + ✓ Verificado.
+//   Admin:       el dueño del sitio: rango 'admin' en su fila (o
+//                el alias ADMIN_ALIAS de entorno). El rango vive en
+//                la fila del usuario (por id), así que si el dueño
+//                cambia su @usuario sigue siendo Admin. Insignia
+//                especial dorada + ✓ Verificado.
 //   Nuevo:       menos de 30 días en la plataforma.
 //   Top:         10 o más posts Y 90 o más días de antigüedad.
 //   Confiable:   3 o más posts Y 0 contenidos quitados por moderación.
@@ -47,16 +50,26 @@
 //
 // NO hay rangos con letras (A/M/V/N) ni rol de moderador: se
 // quitaron del port por decisión del dueño (2026-11-20). La columna
-// users.rank queda en la base, sin usarse, para no borrar datos.
+// users.rank solo se usa con el valor 'admin' para marcar al dueño
+// del sitio (los demás quedan en 'new'); ningún otro valor se
+// muestra ni da permisos.
 function isAdminAlias(alias) {
   return Boolean(process.env.ADMIN_ALIAS) && alias === process.env.ADMIN_ALIAS;
 }
 
-// Verificación efectiva: el campo guardado, o el alias de admin,
-// que siempre se muestra verificado. El campo llega como boolean
+// Dueño del sitio: rango 'admin' en su fila o alias ADMIN_ALIAS.
+// El rango es lo que sobrevive a un cambio de @usuario: vive en la
+// fila del usuario (por id), no en el alias. Recibe una fila de
+// usuario (o el payload del token, que lleva alias y rango).
+function isAdminUser(user) {
+  return Boolean(user) && (user.rank === 'admin' || isAdminAlias(user.alias));
+}
+
+// Verificación efectiva: el campo guardado, o el dueño, que
+// siempre se muestra verificado. El campo llega como boolean
 // (Postgres) o como 0/1 (SQLite).
-function effectiveVerified({ verified = false, alias = '' } = {}) {
-  if (isAdminAlias(alias)) return true;
+function effectiveVerified({ verified = false, alias = '', rank = '' } = {}) {
+  if (isAdminUser({ alias, rank })) return true;
   return verified === true || verified === 1 || verified === '1';
 }
 
@@ -115,4 +128,4 @@ function formatResponseTime(minutes) {
   return `${hours} h`;
 }
 
-module.exports = { clamp, daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime, isAdminAlias, effectiveVerified };
+module.exports = { clamp, daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime, isAdminAlias, isAdminUser, effectiveVerified };
