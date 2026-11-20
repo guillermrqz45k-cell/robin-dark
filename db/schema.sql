@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS users (
   -- desde epoch). El @usuario también solo se puede cambiar
   -- 1 vez al mes.
   alias_changed_at BIGINT,
+  -- Versión del token: cambia cada vez que se cambia la contraseña
+  -- y los tokens con la versión vieja dejan de valer.
+  token_version INTEGER NOT NULL DEFAULT 0,
+  -- Intentos fallidos de entrar con esta cuenta y hasta cuándo
+  -- queda bloqueada (milisegundos desde epoch): tras 5 fallos,
+  -- la cuenta se bloquea 15 minutos.
+  failed_logins INTEGER NOT NULL DEFAULT 0,
+  locked_until BIGINT,
   -- Rango con letras: admin / moderator / veteran / new ('new' por
   -- defecto al registrarse). El alias de ADMIN_ALIAS siempre es
   -- admin, aunque el campo diga otra cosa.
