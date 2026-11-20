@@ -151,6 +151,20 @@ CREATE TABLE IF NOT EXISTS email_verification_codes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Actividad sospechosa: intentos fallidos de entrar, códigos
+-- erróneos, límites alcanzados y acciones del dueño. Se guarda
+-- el evento, la IP, el usuario (si se conoce) y un detalle con el
+-- correo enmascarado. El dueño la consulta en
+-- GET /api/users/me/security-events.
+CREATE TABLE IF NOT EXISTS security_events (
+  id SERIAL PRIMARY KEY,
+  event TEXT NOT NULL,
+  ip TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  detail TEXT,
+  created_at BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS verification_requests (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
