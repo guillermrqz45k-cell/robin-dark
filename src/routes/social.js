@@ -735,8 +735,8 @@ router.get('/trends', optionalAuth, async (req, res) => {
         `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank,
                 (SELECT COUNT(*) FROM follows f WHERE f.followed_id = u.id) AS followers_count
          FROM users u
-         WHERE u.disabled = FALSE AND (u.verified = TRUE OR u.rank = 'admin') AND u.id <> $1 AND u.id NOT IN (SELECT followed_id FROM follows WHERE follower_id = $1)
-         ORDER BY CASE WHEN u.rank = 'admin' THEN 0 ELSE 1 END, followers_count DESC, u.created_at DESC LIMIT 10`,
+         WHERE u.disabled = FALSE AND u.id <> $1 AND u.id NOT IN (SELECT followed_id FROM follows WHERE follower_id = $1)
+         ORDER BY CASE WHEN u.rank = 'admin' THEN 0 WHEN u.verified = TRUE THEN 1 ELSE 2 END, followers_count DESC, u.created_at DESC LIMIT 10`,
         [req.user.id],
       );
       const photoUrls = await photos.urlsByIds(collectAvatarIds(users.rows));
@@ -757,7 +757,7 @@ router.get('/trends', optionalAuth, async (req, res) => {
       const users = await db.query(
         `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank,
                 (SELECT COUNT(*) FROM follows f WHERE f.followed_id = u.id) AS followers_count
-         FROM users u WHERE u.disabled = FALSE AND (u.verified = TRUE OR u.rank = 'admin') ORDER BY CASE WHEN u.rank = 'admin' THEN 0 ELSE 1 END, followers_count DESC, u.created_at DESC LIMIT 10`,
+         FROM users u WHERE u.disabled = FALSE ORDER BY CASE WHEN u.rank = 'admin' THEN 0 WHEN u.verified = TRUE THEN 1 ELSE 2 END, followers_count DESC, u.created_at DESC LIMIT 10`,
       );
       const photoUrls = await photos.urlsByIds(collectAvatarIds(users.rows));
       suggested = users.rows.map((u) => ({
