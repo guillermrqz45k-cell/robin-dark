@@ -23,7 +23,7 @@ function read(p) {
 }
 
 const LEGAL = ['aviso-legal.html', 'privacidad.html', 'cookies.html', 'terminos.html'];
-const KEY_PHRASES = ['Guillermo Marquez', 'guillermrqz45k@gmail.com', 'Ley 1581', 'rd_cookie_consent', 'Última actualización'];
+const KEY_PHRASES = ['Guillermo Marquez', 'robindarkoficial@gmail.com', 'Ley 1581', 'rd_cookie_consent', 'Última actualización'];
 
 console.log('== Páginas legales ==');
 for (const file of LEGAL) {
