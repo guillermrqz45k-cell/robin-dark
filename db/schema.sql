@@ -56,14 +56,15 @@ CREATE TABLE IF NOT EXISTS users (
   -- de los demás (perfil, búsquedas, feed, listas).
   disabled BOOLEAN NOT NULL DEFAULT FALSE,
   -- Rango con letras: admin / moderator / veteran / new ('new' por
-  -- defecto al registrarse). El alias de ADMIN_ALIAS siempre es
-  -- admin, aunque el campo diga otra cosa.
+  -- defecto al registrarse). El rango 'admin' solo lo concede el
+  -- dueño desde el perfil; el alias de ADMIN_ALIAS solo lo
+  -- identifica, no da admin por sí solo.
   -- Rango con letras (columna vieja, SIN USO desde 2026-11-20:
   -- no hay rangos A/M/V/N ni moderadores; se conserva para no
   -- borrar datos de las bases ya creadas).
   rank TEXT NOT NULL DEFAULT 'new' CHECK (rank IN ('admin', 'moderator', 'veteran', 'new')),
   -- Verificación: el admin verifica usuarios desde el panel.
-  -- El alias de ADMIN_ALIAS siempre se muestra verificado.
+  -- Un usuario con rango 'admin' siempre se muestra verificado.
   verified BOOLEAN NOT NULL DEFAULT FALSE,
   -- Notificaciones: instante (ms) hasta el que el usuario ya vio
   -- su campana (NULL = nunca). Las notificaciones se derivan de la
