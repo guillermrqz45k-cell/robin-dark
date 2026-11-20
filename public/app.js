@@ -1429,7 +1429,7 @@ function openEditProfileModal() {
     if (avatar) body.avatar = { mime: avatar.mime, data: avatar.data };
     if (cover) body.cover = { mime: cover.mime, data: cover.data };
     const r = await api('/api/users/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
-    if (r.status === 200) { closeModal(); notice('Perfil actualizado.'); renderTopbar(); renderPerfil(); }
+    if (r.status === 200) { closeModal(); notice(r.data.published_posts ? 'Perfil actualizado. Tu foto también se publicó en el inicio.' : 'Perfil actualizado.'); renderTopbar(); renderPerfil(); }
     else notice(r.data.error || 'No se pudo guardar el perfil.');
   });
 }
