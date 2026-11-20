@@ -287,6 +287,48 @@ async function main() {
     r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: 'Autor Tras Un Mes' });
     check('pasados 30 días el nombre se puede cambiar -> 200', r.status === 200 && r.data.user.real_name === 'Autor Tras Un Mes', JSON.stringify(r.data));
 
+    console.log('== El @usuario también se cambia 1 vez al mes ==');
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { alias: 'autor_nuevo' });
+    check('cambiar el @usuario -> 200 y devuelve token nuevo', r.status === 200 && r.data.user.alias === 'autor_nuevo' && typeof r.data.token === 'string', JSON.stringify(r.data));
+    const authorTok2 = r.data.token;
+    const profNew = await req('GET', '/api/users/autor_nuevo/profile');
+    check('el perfil con el @ nuevo existe', profNew.status === 200 && profNew.data.alias === 'autor_nuevo', JSON.stringify(profNew.data));
+    const profOld = await req('GET', '/api/users/autor1/profile');
+    check('el @ viejo ya no existe -> 404', profOld.status === 404, JSON.stringify(profOld.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok2, { alias: 'autor_otro' });
+    check('cambiar el @usuario otra vez enseguida -> 429', r.status === 429 && /una vez al mes/.test(r.data.error || ''), JSON.stringify(r.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok2, { alias: 'autor_nuevo' });
+    check('repetir el mismo @usuario no cuenta como cambio -> 200', r.status === 200, JSON.stringify(r.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok2, { alias: 'seguidor1' });
+    check('@usuario en uso -> 409', r.status === 409, JSON.stringify(r.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok2, { alias: 'ab' });
+    check('@usuario inválido (muy corto) -> 400', r.status === 400, JSON.stringify(r.data));
+    let agedAlias = false;
+    for (let i = 0; i < 5 && !agedAlias; i++) {
+      try {
+        const tdb2 = new DatabaseSync(DB_FILE);
+        tdb2.prepare('UPDATE users SET alias_changed_at = ? WHERE alias = ?').run(Date.now() - 31 * 24 * 60 * 60 * 1000, 'autor_nuevo');
+        tdb2.close();
+        agedAlias = true;
+      } catch (e) { await new Promise((r2) => setTimeout(r2, 100)); }
+    }
+    check('se pudo poner el cambio de @ hace 31 días (preparación)', agedAlias);
+    r = await req('PATCH', '/api/users/me/profile', authorTok2, { alias: 'autor_final' });
+    check('pasados 30 días el @usuario se puede cambiar -> 200', r.status === 200 && r.data.user.alias === 'autor_final', JSON.stringify(r.data));
+    const appJsAlias = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
+    check('app.js: campo @usuario en Editar perfil con límite mensual', appJsAlias.includes('edit-alias') && appJsAlias.includes('1 vez al mes'));
+
+    console.log('== El dueño sigue siendo Admin aunque cambie su @usuario ==');
+    r = await req('PATCH', '/api/users/me/profile', adminUser.token, { alias: 'jefazo' });
+    check('el dueño cambia su @usuario -> 200 y sigue Admin', r.status === 200 && r.data.user.alias === 'jefazo' && r.data.user.is_admin === true, JSON.stringify(r.data));
+    const adminTok2 = r.data.token;
+    const meAdmin = await req('GET', '/api/auth/me', adminTok2);
+    check('con el token nuevo, /me sigue diciendo Admin', meAdmin.status === 200 && meAdmin.data.user.is_admin === true && meAdmin.data.user.alias === 'jefazo', JSON.stringify(meAdmin.data));
+    const profAdmin2 = await req('GET', '/api/users/jefazo/profile');
+    check('el perfil del dueño con @ nuevo: Admin + verificado', profAdmin2.status === 200 && profAdmin2.data.is_admin === true && profAdmin2.data.verified === true && profAdmin2.data.badge && profAdmin2.data.badge.key === 'admin', JSON.stringify(profAdmin2.data));
+    r = await req('POST', '/api/users/autor_final/verify', adminTok2, { verified: true });
+    check('el dueño con @ nuevo sigue pudiendo dar verificado', r.status === 200 && r.data.verified === true, JSON.stringify(r.data));
+
     console.log('== Cliente: sin tienda, con mensajes, perfil, insignias y compartir ==');
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
     const appJs = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
