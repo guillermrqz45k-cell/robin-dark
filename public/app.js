@@ -73,6 +73,14 @@ async function api(path, opts) {
   let data = {};
   try { data = await res.json(); } catch (e) { /* sin cuerpo */ }
   if (res.status === 401) { logout(true); }
+  // Cuenta inhabilitada de forma permanente por el dueño: si había
+  // una sesión activa (token), se cierra y se le dice por qué. Si
+  // no había sesión (el intento de entrar), el error lo muestra el
+  // formulario de entrar, así que aquí no se hace nada.
+  if (res.status === 403 && data && data.code === 'account_disabled' && token) {
+    logout(true);
+    notice(data.error || 'Tu cuenta ha sido inhabilitada permanentemente.', 10000);
+  }
   return { status: res.status, data };
 }
 
@@ -112,12 +120,70 @@ function fileToBase64(file) {
   });
 }
 
+// Achica una foto grande (las del teléfono suelen pesar más de
+// 5 MB) para que entre en el límite al subirla y no se pierda
+// sin aviso. Devuelve { mime: 'image/jpeg', data, kind: 'image' }
+// o null si no se pudo achicar. Respeta la orientación EXIF
+// (createImageBitmap con imageOrientation) para que la foto no
+// salga girada; si no está disponible, usa un Image normal.
+async function downscaleImage(file, maxSide = 1600) {
+  let source = null;
+  try {
+    if (typeof createImageBitmap === 'function') {
+      source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } else {
+      const url = URL.createObjectURL(file);
+      try {
+        source = await new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload = () => resolve(im);
+          im.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+          im.src = url;
+        });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    const w = source.width;
+    const h = source.height;
+    if (!w || !h) return null;
+    const scale = (w > maxSide || h > maxSide) ? Math.min(maxSide / w, maxSide / h) : 1;
+    const cw = Math.max(1, Math.round(w * scale));
+    const ch = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    canvas.getContext('2d').drawImage(source, 0, 0, cw, ch);
+    if (source.close) source.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+    if (!blob) return null;
+    const data = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1] || '');
+      r.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+      r.readAsDataURL(blob);
+    });
+    if (!data) return null;
+    return { mime: 'image/jpeg', data, kind: 'image' };
+  } catch (e) {
+    if (source && source.close) source.close();
+    return null;
+  }
+}
+
 async function pickMedia(file) {
   if (!file) return null;
   const isImg = /^image\/(png|jpe?g)$/i.test(file.type);
   const isVid = /^video\/(mp4|webm)$/i.test(file.type);
   if (!isImg && !isVid) { notice('Solo se aceptan fotos JPG/PNG o vídeos MP4/WebM.'); return null; }
   const max = isImg ? MAX_PHOTO_MB : MAX_VIDEO_MB;
+  // Las fotos del teléfono suelen pesar más de 5 MB: se achican
+  // antes de subirlas para que entren en el límite y no se pierdan
+  // sin aviso (antes se rechazaban y el guardado seguía sin la foto).
+  if (isImg && file.size > 1024 * 1024) {
+    const small = await downscaleImage(file);
+    if (small && small.data.length * 0.75 < file.size) return small;
+  }
   if (file.size > max * 1024 * 1024) { notice(`El archivo es muy grande: máximo ${max} MB.`); return null; }
   const data = await fileToBase64(file);
   return { mime: file.type, data, kind: isImg ? 'image' : 'video' };
@@ -1223,13 +1289,13 @@ async function renderPerfil() {
         ${avatarHtml({ alias: p.alias, avatar_url: p.avatar_url }, 'lg')}
         <div style="flex:1;min-width:200px"><h1 class="profile-name">${esc(p.real_name || p.alias)} ${adminBadgeHtml(p.is_admin)}${verifiedHtml(p.verified)}</h1>
         <div class="muted small">@${esc(p.alias)}</div>
-        <div style="margin-top:4px">${badgeHtml(p.badge)}${p.seniority === 'antiguo' ? ' <span class="badge-antiguo">★ Antiguo</span>' : ''}${p.seniority === 'nuevo' ? ' <span class="seniority-tag">Perfil nuevo</span>' : ''}</div>
+        <div style="margin-top:4px">${badgeHtml(p.badge)}${p.seniority === 'antiguo' ? ' <span class="badge-antiguo">★ Antiguo</span>' : ''}${p.seniority === 'nuevo' ? ' <span class="seniority-tag">Perfil nuevo</span>' : ''}${p.disabled ? ' <span class="disabled-badge">🚫 Cuenta inhabilitada</span>' : ''}</div>
         <div class="profile-stats"><span><strong>${p.posts_count || 0}</strong> publicaciones</span><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.followers_count || 0}</strong> seguidores</button><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.following_count || 0}</strong> seguidos</button><span><strong>${p.ratings_count || 0}</strong> valoraciones</span><span>⭐ ${p.avg_stars === null || p.avg_stars === undefined ? '—' : p.avg_stars}</span></div></div>
       </div>
       ${p.bio ? `<p style="margin:12px 0 0">${linkify(p.bio)}</p>` : ''}
       <div class="profile-actions">
         ${isOwn ? `<button type="button" class="cta" id="profile-edit">Editar perfil</button><button type="button" class="ghost-btn" id="profile-logout">Cerrar sesión</button>`
-          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>${me && me.is_admin ? (p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">✓ Dar verificado</button>`) : ''}`}
+          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>${me && me.is_admin ? `${p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">✓ Dar verificado</button>`}${p.disabled ? `<button type="button" class="cta" id="profile-disable">Habilitar cuenta</button>` : `<button type="button" class="danger-btn" id="profile-disable">🚫 Inhabilitar cuenta</button>`}` : ''}`}
       </div>
       ${p.is_friend ? `<p class="muted small">👥 Son amigos (se siguen mutuamente) · ${p.mutual_follows || 0} amigos en común</p>` : ''}
       <div class="tabs">
@@ -1266,6 +1332,18 @@ async function renderPerfil() {
     const rr = await api(`/api/users/${encodeURIComponent(p.alias)}/verify`, { method: 'POST', body: JSON.stringify({ verified: give }) });
     if (rr.status === 200) { notice(give ? `Ahora @${p.alias} está verificado.` : `Se quitó el verificado a @${p.alias}.`); renderPerfil(); }
     else notice(rr.data.error || 'No se pudo cambiar el verificado.');
+  });
+  // Botón del dueño para inhabilitar (o habilitar) una cuenta que
+  // no cumple las normas: la cuenta deja de entrar y desaparece
+  // de la vista de los demás. Se pide confirmación porque es
+  // permanente (se puede deshacer con «Habilitar cuenta»).
+  const disableBtn = $('#profile-disable');
+  if (disableBtn) disableBtn.addEventListener('click', async () => {
+    const disabling = !p.disabled;
+    if (disabling && !window.confirm(`¿Inhabilitar la cuenta de @${p.alias} de forma permanente? No podrá entrar y su perfil y sus publicaciones dejarán de verse.`)) return;
+    const rr = await api(`/api/users/${encodeURIComponent(p.alias)}/disable`, { method: 'POST', body: JSON.stringify({ disabled: disabling }) });
+    if (rr.status === 200) { notice(disabling ? `La cuenta de @${p.alias} quedó inhabilitada permanentemente.` : `La cuenta de @${p.alias} quedó habilitada de nuevo.`); renderPerfil(); }
+    else notice(rr.data.error || 'No se pudo cambiar la cuenta.');
   });
   await renderPerfilTab();
 }

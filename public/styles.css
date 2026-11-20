@@ -273,6 +273,8 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .profile-antiguo { border: 2px solid #f59e0b !important; box-shadow: 0 0 24px rgba(245, 158, 11, 0.35); }
 .profile-antiguo .profile-cover { border-bottom: 2px solid #f59e0b; }
 .seniority-tag { font-size: 12px; font-weight: 800; color: #fbbf24; margin-left: 6px; }
+/* Cuenta inhabilitada por el dueño (solo la ve él en el perfil). */
+.disabled-badge { font-size: 12px; font-weight: 800; color: #f87171; margin-left: 6px; }
 
 /* ---------- Perfil ---------- */
 .profile-cover { height: 200px; border-radius: 14px 14px 0 0; background: linear-gradient(135deg, #312e81, #6d28d9 55%, #0ea5e9); background-size: cover; background-position: center; }
