@@ -20,11 +20,12 @@
 //   muere) y no puede publicar.
 // - desaparece de la vista de los demás: su perfil da 404 (y sus
 //   publicaciones, seguidores y amigos también), no sale en las
-//   búsquedas, su publicación no sale en el feed ni por enlace
-//   directo, su historia no sale en las historias y su reacción no
-//   sale en la lista de reacciones. El dueño sí sigue viendo su
-//   perfil (con disabled: true), su publicación por enlace y sus
-//   listas, y la ve en las búsquedas (con disabled: true).
+//   búsquedas, su publicación no sale en el feed, en Explorar (ni
+//   su hashtag en tendencias) ni por enlace directo, su historia
+//   no sale en las historias y su reacción no sale en la lista de
+//   reacciones. El dueño sí sigue viendo su perfil (con
+//   disabled: true), su publicación por enlace y sus listas, y la
+//   ve en las búsquedas (con disabled: true).
 // - al habilitarla de nuevo, vuelve a verse y a poder entrar.
 // - los eventos user_disabled y user_enabled quedan registrados.
 const fs = require('fs');
@@ -166,7 +167,7 @@ async function main() {
     // La víctima publica (para comprobar que su contenido se
     // esconde) y cuenta una historia; el espectador publica para
     // que la víctima reaccione a algo.
-    const post = await req('POST', '/api/social/posts', v.token, { text: 'Publicación de la víctima que debe esconderse.' });
+    const post = await req('POST', '/api/social/posts', v.token, { text: 'Publicación de la víctima que debe esconderse. #victimaescondida' });
     check('la víctima publicó', post.status === 201, `status=${post.status}`);
     const postId = post.data.post && post.data.post.id;
     const story = await req('POST', '/api/social/stories', v.token, { kind: 'story', text: 'Historia de la víctima.' });
@@ -219,6 +220,9 @@ async function main() {
     check('el dueño sí la ve en la búsqueda (con disabled: true)', Boolean(foundOwner) && foundOwner.disabled === true, `encontrada=${Boolean(foundOwner)}`);
     const feed = await req('GET', '/api/social/feed?tab=para_ti', m.token);
     check('la publicación de la víctima no sale en el feed', feed.status === 200 && !(feed.data.posts || []).some((p) => p.id === postId), `status=${feed.status}`);
+    const explore = await req('GET', '/api/social/explore', m.token);
+    check('la publicación de la víctima no sale en Explorar', explore.status === 200 && !(explore.data.posts || []).some((p) => p.id === postId), `status=${explore.status}`);
+    check('su hashtag no sale en las tendencias de Explorar', explore.status === 200 && !(explore.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${explore.status}`);
     const singleViewer = await req('GET', `/api/social/posts/${postId}`, m.token);
     check('la publicación por enlace da 404 para un usuario normal', singleViewer.status === 404, `status=${singleViewer.status}`);
     const singleOwner = await req('GET', `/api/social/posts/${postId}`, o.token);
@@ -243,6 +247,9 @@ async function main() {
     check('el perfil vuelve a verse (200)', profAgain.status === 200, `status=${profAgain.status}`);
     const feedAgain = await req('GET', '/api/social/feed?tab=para_ti', m.token);
     check('la publicación vuelve a salir en el feed', feedAgain.status === 200 && (feedAgain.data.posts || []).some((p) => p.id === postId), `status=${feedAgain.status}`);
+    const exploreAgain = await req('GET', '/api/social/explore', m.token);
+    check('la publicación vuelve a salir en Explorar', exploreAgain.status === 200 && (exploreAgain.data.posts || []).some((p) => p.id === postId), `status=${exploreAgain.status}`);
+    check('su hashtag vuelve a las tendencias de Explorar', exploreAgain.status === 200 && (exploreAgain.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${exploreAgain.status}`);
     const loginAgain = await req('POST', '/api/auth/login', undefined, { email: victim.email, password: victim.password });
     check('la víctima puede entrar de nuevo (200)', loginAgain.status === 200, `status=${loginAgain.status}`);
 
