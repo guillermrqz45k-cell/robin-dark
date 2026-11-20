@@ -1,5 +1,8 @@
 // server.js — entrada de Robin Dark.
-// Mercado abierto en JavaScript (Node.js + Express).
+// Red social en JavaScript (Node.js + Express). Robin Dark ya no
+// tiene tienda (decisión de AMO, 2026-11-20): no hay anuncios,
+// pedidos ni custodia. Las tablas listings/orders/conversations/
+// messages quedan en la base de datos, intactas, sin usarse.
 // Base de datos: Postgres en Railway (DATABASE_URL) o SQLite en local.
 require('dotenv').config();
 const express = require('express');
@@ -49,7 +52,10 @@ app.use(
 );
 app.disable('x-powered-by');
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '30mb' })); // 30 MB: las fotos (avatar,
+// portada, documento, posts) llegan en base64 dentro del JSON y una
+// foto de 5 MB son ~6,7 MB en base64; un vídeo corto de 20 MB son
+// ~26,7 MB. El 413 sigue protegiendo contra cuerpos mayores.
 
 // Versionado de app.js y styles.css: cada despliegue cambia la
 // versión (?v=) y el teléfono ya no puede seguir usando un JS viejo
@@ -90,11 +96,17 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/users', require('./src/routes/users'));
-app.use('/api/listings', require('./src/routes/listings'));
-app.use('/api/orders', require('./src/routes/orders'));
+// Sin tienda: /api/listings y /api/orders ya no se montan. Las
+// tablas quedan en la base de datos, intactas, sin usarse.
 app.use('/api/chat', require('./src/routes/chat'));
 app.use('/api/stats', require('./src/routes/stats'));
-app.use('/api/admin', require('./src/routes/admin'));
+// Sin panel de administrador: no se monta /api/admin. El dueño
+// (alias de ADMIN_ALIAS) aprueba las verificaciones desde su
+// propio perfil (GET/POST /api/users/me/verification-requests).
+app.use('/api/social', require('./src/routes/social'));
+app.use('/api/social/groups', require('./src/routes/groups'));
+app.use('/api/ai', require('./src/routes/ai'));
+app.use('/api/photos', require('./src/routes/photos'));
 
 // Cualquier ruta no API sirve la app.
 app.get('*', (req, res) => {
@@ -123,6 +135,17 @@ app.use((err, req, res, next) => {
 
 async function start() {
   await db.init();
+  // Sin RESEND_API_KEY no se puede enviar ningún código de
+  // verificación: como el login queda bloqueado hasta confirmar
+  // el correo, en producción nadie podría entrar. Se avisa bien
+  // fuerte en el arranque para que se vea en los logs de Railway.
+  // En local y en los tests no pasa nada: ahí no hace falta.
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[robin-dark] AVISO: sin RESEND_API_KEY no se envían los códigos de verificación ni de recuperación. En producción la llave es obligatoria: sin ella nadie puede confirmar su correo y el login queda bloqueado para todos.');
+  }
+  if (process.env.RESEND_API_URL) {
+    console.warn('[robin-dark] AVISO: RESEND_API_URL está puesto (solo existe para las pruebas locales). En producción NO debe estar: los correos deben salir por api.resend.com.');
+  }
   app.listen(PORT, () => {
     console.log(`[robin-dark] Escuchando en http://localhost:${PORT}`);
   });

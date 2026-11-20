@@ -1,132 +1,167 @@
-// src/routes/chat.js — chat privado entre comprador y vendedor.
-// Una conversación por anuncio + comprador + vendedor.
-// Solo participan esas dos personas.
+// src/routes/chat.js — mensajes directos entre usuarios.
+//
+// Un hilo (dm_threads) por pareja de usuarios (a < b, único).
+// Solo participan esas dos personas. Cada mensaje tiene read_at:
+// cuando abres un hilo, los mensajes que te mandaron se marcan
+// como leídos, y el globo de Mensajes cuenta los que quedan sin
+// leer (unread_count por hilo, unread_total en la lista).
+//
+// GET  /api/chat — mis hilos con la otra persona, último mensaje
+//   y no leídos. POST /api/chat { user_id | alias } — abrir (o
+//   reutilizar) el hilo con alguien. GET /api/chat/:id/messages
+//   — mensajes del hilo (marca como leídos los que me mandaron).
+//   POST /api/chat/:id/messages { body } — enviar un mensaje.
+//
+// Los chats viejos por anuncio quedan en conversations/messages,
+// intactos, sin usarse (Robin Dark ya no tiene tienda).
 const express = require('express');
 const db = require('../db');
+const photos = require('../photos');
 const { requireAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
-const { rankInfo, effectiveVerified } = require('../reputation');
+const { authorCard } = require('../present');
+const { isAdminAlias, effectiveVerified } = require('../reputation');
 
 const router = express.Router();
+const MAX_BODY = 2000;
 
-// Rango y verificación de quien envía un mensaje: se calculan en
-// el servidor y viajan con cada mensaje, para mostrar las letras
-// y el ✓ Verificado junto al alias en el chat.
+// Fecha "ahora" en cada motor, para read_at.
+const NOW_SQL = db.usePostgres ? 'NOW()' : "datetime('now')";
+
+// Insignia del dueño y verificación de quien envía un mensaje:
+// se calculan en el servidor y viajan con cada mensaje, para
+// mostrar la insignia «Admin» y el ✓ Verificado junto al alias
+// en el chat. No hay rangos con letras.
 function presentMessage(row) {
-  const info = rankInfo({ rank: row.sender_rank, alias: row.sender_alias });
   return {
     id: row.id,
-    conversation_id: row.conversation_id,
+    thread_id: row.thread_id,
     sender_id: row.sender_id,
     sender_alias: row.sender_alias,
-    sender_rank: info.rank,
-    sender_rank_letter: info.rank_letter,
-    sender_rank_label: info.rank_label,
-    sender_rank_badges: info.rank_badges,
+    sender_is_admin: isAdminAlias(row.sender_alias),
     sender_verified: effectiveVerified({ verified: row.sender_verified, alias: row.sender_alias }),
     body: row.body,
     created_at: row.created_at,
   };
 }
 
-// GET /api/chat — mis conversaciones. Cada una trae su último
-// mensaje (id y quién lo envió) para que el cliente pueda avisar
-// con el badge de Mensajes cuando llega algo nuevo sin recargar.
+async function otherUser(thread, myId) {
+  const otherId = thread.user_a_id === myId ? thread.user_b_id : thread.user_a_id;
+  const row = await db.get(
+    'SELECT id, alias, rank, verified, avatar_photo_id FROM users WHERE id = $1',
+    [otherId],
+  );
+  if (!row) return null;
+  const urls = await photos.urlsByIds([row.avatar_photo_id]);
+  return authorCard(row, urls);
+}
+
+// GET /api/chat — mis hilos. Cada uno trae a la otra persona, su
+// último mensaje y cuántos mensajes suyos tengo sin leer, para el
+// badge de Mensajes. unread_total es la suma para el globo.
 router.get('/', requireAuth, async (req, res) => {
   try {
     const r = await db.query(
-      `SELECT c.*, l.title AS listing_title,
-              b.alias AS buyer_alias, s.alias AS seller_alias,
-              (SELECT m.id FROM messages m WHERE m.conversation_id = c.id
-                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_id,
-              (SELECT m.sender_id FROM messages m WHERE m.conversation_id = c.id
-                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_sender_id
-       FROM conversations c
-       JOIN listings l ON l.id = c.listing_id
-       JOIN users b ON b.id = c.buyer_id
-       JOIN users s ON s.id = c.seller_id
-       WHERE c.buyer_id = $1 OR c.seller_id = $1
-       ORDER BY c.created_at DESC`,
+      `SELECT t.*,
+              (SELECT m.body FROM dm_messages m WHERE m.thread_id = t.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_body,
+              (SELECT m.sender_id FROM dm_messages m WHERE m.thread_id = t.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_sender_id,
+              (SELECT m.created_at FROM dm_messages m WHERE m.thread_id = t.id
+                ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_at,
+              (SELECT COUNT(*) FROM dm_messages m WHERE m.thread_id = t.id
+                AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread_count
+       FROM dm_threads t
+       WHERE t.user_a_id = $1 OR t.user_b_id = $1
+       ORDER BY last_at DESC NULLS LAST, t.created_at DESC, t.id DESC`,
       [req.user.id],
     );
-    return res.json({ conversations: r.rows });
+    const threads = [];
+    let unreadTotal = 0;
+    for (const row of r.rows) {
+      const other = await otherUser(row, req.user.id);
+      if (!other) continue;
+      const unread = Number(row.unread_count);
+      unreadTotal += unread;
+      threads.push({
+        id: row.id,
+        other_user: other,
+        last_body: row.last_body || null,
+        last_sender_id: row.last_sender_id ? Number(row.last_sender_id) : null,
+        last_at: row.last_at || null,
+        unread_count: unread,
+        created_at: row.created_at,
+      });
+    }
+    return res.json({ threads, unread_total: unreadTotal });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo cargar el chat.' });
   }
 });
 
-// POST /api/chat { listing_id } — abrir (o reutilizar) la conversación de un anuncio.
+// POST /api/chat { user_id | alias } — abrir (o reutilizar) el
+// hilo con alguien. No te puedes escribir a ti mismo.
 router.post('/', requireAuth, requireObjectBody, async (req, res) => {
   try {
-    const listingId = Number(req.body.listing_id);
-    if (!Number.isInteger(listingId) || listingId <= 0) {
-      // Se registra lo que llegó (solo el id, sin datos personales):
-      // un id perdido en el cliente llega aquí como null y antes solo
-      // se veía el error en la pantalla del usuario.
-      console.error('[chat] POST /api/chat con listing_id no válido:', JSON.stringify(req.body));
-      return res.status(400).json({ error: 'Anuncio no válido: no llegó el identificador del anuncio. Recarga la página e inténtalo de nuevo.' });
+    let other = null;
+    if (req.body.user_id !== undefined && req.body.user_id !== null && req.body.user_id !== '') {
+      const n = Number(req.body.user_id);
+      if (!Number.isInteger(n) || n <= 0) return res.status(400).json({ error: 'Ese usuario no es válido.' });
+      other = await db.get('SELECT id, alias FROM users WHERE id = $1', [n]);
+    } else if (req.body.alias) {
+      const alias = String(req.body.alias).trim();
+      if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
+      other = await db.get('SELECT id, alias FROM users WHERE alias = $1', [alias]);
+    } else {
+      return res.status(400).json({ error: 'Falta el usuario con el que quieres hablar.' });
     }
-    const listing = await db.get('SELECT * FROM listings WHERE id = $1', [listingId]);
-    if (!listing) return res.status(404).json({ error: 'Anuncio no encontrado.' });
-    if (listing.seller_id === req.user.id) {
-      return res.status(400).json({ error: 'Eres el vendedor de este anuncio.' });
+    if (!other) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    if (other.id === req.user.id) return res.status(400).json({ error: 'No te puedes escribir a ti mismo.' });
+    const [a, b] = [req.user.id, other.id].sort((x, y) => x - y);
+    let thread = await db.get('SELECT * FROM dm_threads WHERE user_a_id = $1 AND user_b_id = $2', [a, b]);
+    if (!thread) {
+      const created = await db.query(
+        'INSERT INTO dm_threads (user_a_id, user_b_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING *',
+        [a, b],
+      );
+      thread = created.rows[0]
+        || await db.get('SELECT * FROM dm_threads WHERE user_a_id = $1 AND user_b_id = $2', [a, b]);
     }
-    const existing = await db.get(
-      'SELECT * FROM conversations WHERE listing_id = $1 AND buyer_id = $2 AND seller_id = $3',
-      [listing.id, req.user.id, listing.seller_id],
-    );
-    if (existing) return res.json({ conversation: existing });
-    // Un artículo agotado no admite tratos nuevos: la única forma
-    // de que vuelva es que el vendedor reponga el stock.
-    if (listing.status !== 'disponible') {
-      return res.status(409).json({ error: 'Ese artículo está agotado.' });
-    }
-    const created = await db.query(
-      `INSERT INTO conversations (listing_id, buyer_id, seller_id)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [listing.id, req.user.id, listing.seller_id],
-    );
-    return res.status(201).json({ conversation: created.rows[0] });
+    const otherCard = await otherUser(thread, req.user.id);
+    return res.status(201).json({ thread: { id: thread.id, other_user: otherCard, created_at: thread.created_at } });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo abrir el chat.' });
   }
 });
 
-// GET /api/chat/:id/messages — mensajes + estado del anuncio y de la
-// custodia (escrow) de ese trato, para mostrarlos en el chat.
+// GET /api/chat/:id/messages — mensajes del hilo + la otra
+// persona. Al abrirlo, los mensajes que me mandaron se marcan
+// como leídos (el badge baja).
 router.get('/:id/messages', requireAuth, async (req, res) => {
   try {
     const id = requireIdParam(req, res);
     if (id === null) return;
-    const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [id]);
-    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
-    if (conv.buyer_id !== req.user.id && conv.seller_id !== req.user.id) {
+    const thread = await db.get('SELECT * FROM dm_threads WHERE id = $1', [id]);
+    if (!thread) return res.status(404).json({ error: 'Conversación no encontrada.' });
+    if (thread.user_a_id !== req.user.id && thread.user_b_id !== req.user.id) {
       return res.status(403).json({ error: 'Este chat no es tuyo.' });
     }
-    const listing = await db.get('SELECT id, title, status, stock, price_sats FROM listings WHERE id = $1', [conv.listing_id]);
-    // Pedido de ESTA conversación (este comprador y este vendedor),
-    // no el último pedido del anuncio: un anuncio con stock puede
-    // tener varios pedidos, uno por unidad vendida y por comprador.
-    // Mostrar el pedido de otro comprador en este chat sería
-    // confundir custodias y bloquear el botón de vender.
-    const order = await db.get(
-      'SELECT * FROM orders WHERE listing_id = $1 AND buyer_id = $2 AND seller_id = $3 ORDER BY created_at DESC LIMIT 1',
-      [conv.listing_id, conv.buyer_id, conv.seller_id],
+    await db.query(
+      `UPDATE dm_messages SET read_at = ${NOW_SQL}
+       WHERE thread_id = $1 AND sender_id <> $2 AND read_at IS NULL`,
+      [thread.id, req.user.id],
     );
     const r = await db.query(
-      `SELECT m.*, u.alias AS sender_alias, u.rank AS sender_rank, u.verified AS sender_verified FROM messages m
-       JOIN users u ON u.id = m.sender_id
-       WHERE m.conversation_id = $1 ORDER BY m.created_at ASC, m.id ASC`,
-      [conv.id],
+      `SELECT m.*, u.alias AS sender_alias, u.verified AS sender_verified
+       FROM dm_messages m JOIN users u ON u.id = m.sender_id
+       WHERE m.thread_id = $1 ORDER BY m.created_at ASC, m.id ASC`,
+      [thread.id],
     );
+    const other = await otherUser(thread, req.user.id);
     return res.json({
-      conversation: conv,
-      listing: listing ? { id: listing.id, title: listing.title, status: listing.status, stock: Number(listing.stock ?? 1), cantidad: Number(listing.stock ?? 1), price_sats: Number(listing.price_sats) } : null,
-      // Custodia: null si aún no hay pedido; si lo hay, su estado
-      // (retenido / liberado) se muestra en el chat.
-      order: order ? { id: order.id, status: order.status, buyer_id: order.buyer_id, seller_id: order.seller_id, price_sats: Number(order.price_sats) } : null,
+      thread: { id: thread.id, other_user: other, created_at: thread.created_at },
       messages: r.rows.map(presentMessage),
     });
   } catch (e) {
@@ -135,31 +170,27 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/chat/:id/messages { body }
-// SOLO envía un mensaje. Nunca crea un pedido, nunca marca el anuncio
-// como vendido y nunca muestra "compra exitosa": el chat es solo para
-// contactar al vendedor y negociar el trato.
+// POST /api/chat/:id/messages { body } — enviar un mensaje.
 router.post('/:id/messages', requireAuth, requireObjectBody, async (req, res) => {
   try {
-    const body = String(req.body.body || '').trim().slice(0, 2000);
+    const body = String(req.body.body || '').trim().slice(0, MAX_BODY);
     if (!body) return res.status(400).json({ error: 'El mensaje no puede estar vacío.' });
     const id = requireIdParam(req, res);
     if (id === null) return;
-    const conv = await db.get('SELECT * FROM conversations WHERE id = $1', [id]);
-    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada.' });
-    if (conv.buyer_id !== req.user.id && conv.seller_id !== req.user.id) {
+    const thread = await db.get('SELECT * FROM dm_threads WHERE id = $1', [id]);
+    if (!thread) return res.status(404).json({ error: 'Conversación no encontrada.' });
+    if (thread.user_a_id !== req.user.id && thread.user_b_id !== req.user.id) {
       return res.status(403).json({ error: 'Este chat no es tuyo.' });
     }
     const created = await db.query(
-      `INSERT INTO messages (conversation_id, sender_id, body)
-       VALUES ($1, $2, $3) RETURNING id, conversation_id, sender_id, body, created_at`,
-      [conv.id, req.user.id, body],
+      `INSERT INTO dm_messages (thread_id, sender_id, body)
+       VALUES ($1, $2, $3) RETURNING id, thread_id, sender_id, body, created_at`,
+      [thread.id, req.user.id, body],
     );
-    const sender = await db.get('SELECT alias, rank, verified FROM users WHERE id = $1', [req.user.id]);
+    const sender = await db.get('SELECT alias, verified FROM users WHERE id = $1', [req.user.id]);
     const row = {
       ...created.rows[0],
       sender_alias: sender ? sender.alias : req.user.alias,
-      sender_rank: sender ? sender.rank : 'new',
       sender_verified: sender ? sender.verified : false,
     };
     return res.status(201).json({ message: presentMessage(row) });

@@ -1,37 +1,40 @@
-# Robin Dark — Aquí puedes vender de todo
+# Robin Dark — Tu mundo, tu gente, tu red
 
-Mercado abierto para vender de todo, en JavaScript (Node.js + Express), con base de datos real. No es un archivo HTML suelto: es un proyecto estructurado, listo para publicar en Railway.
+Red social en JavaScript (Node.js + Express), con base de datos real. No es un archivo HTML suelto: es un proyecto estructurado, listo para publicar en Railway.
+
+> Robin Dark ya NO tiene tienda (decisión del dueño, 2026-11-20): no se compra ni se vende nada, no hay anuncios, precios, BTC ni custodia. Las tablas viejas (`listings`, `orders`, `conversations`, `messages`) quedan en la base de datos, intactas, sin usarse: no se borra ningún dato en vivo existente.
 
 ## Qué hace
 
-- **Registro e inicio de sesión anónimos:** solo alias + contraseña. Sin correo, sin teléfono y sin ubicación. Las contraseñas se guardan cifradas con bcrypt. No se guarda ni se muestra la ubicación de nadie.
-- **Tienda con buscador:** la búsqueda es la forma de encontrar artículos. No hay filtros ni botones de categorías en ningún lado.
-- **Publicaciones (todas las de todos los usuarios):** pestaña «Publicaciones» en la navegación, con TODAS las publicaciones reales de la base de datos, disponibles y agotadas, desde el endpoint público `GET /api/listings/all` (sin token, sin `password_hash` ni datos privados). Contadores en vivo — total, disponibles, agotadas y nº de vendedores publicando — y filtro por estado Todas / Disponibles / Agotadas (los contadores siempre son los de todo, el filtro solo cambia la lista). Reutiliza las mismas tarjetas que la Tienda: alias del vendedor clicable con perfil e insignia, precio en BTC y stock; al tocar una disponible se abre su detalle/contacto por chat como en la Tienda, y una agotada muestra «Agotado» sin botón de contacto. La Tienda sigue siendo el escaparate con buscador y solo muestra lo disponible.
-- **Publicar anuncios:** título, descripción, precio en BTC y **cantidad en stock** (por defecto 1). Un anuncio NO es de una sola unidad: se vende unidad a unidad hasta agotar el stock.
-- **Chat privado:** solo entre comprador y vendedor, por anuncio. El chat es solo para contactar y negociar: enviar un mensaje nunca crea un pedido, nunca marca el anuncio como vendido y nunca muestra "compra exitosa". Un artículo agotado no admite tratos nuevos.
-- **Marcar como vendido (solo el vendedor):** cuando el trato se cierra en el chat, el vendedor marca su anuncio como vendido (en Mi cuenta o en el chat). Eso crea el pedido y **descuenta 1 unidad del stock**. El anuncio sigue en la tienda mientras queden unidades y solo se agota cuando el stock llega a 0. La única otra forma de que se acabe es que el vendedor lo dé por agotado, con el botón "Marcar como agotado" en Mi cuenta; con "Reponer stock" vuelve a estar disponible con la cantidad que indique.
-- **Custodia (escrow) en BTC:** al marcar como vendido, el pago queda RETENIDO en custodia (estado: `retenido`). Solo el COMPRADOR puede liberarlo, con el botón "Confirmar que recibí el producto" (en Mi cuenta o en el chat), y solo entonces el pago pasa a `liberado` para el vendedor. El vendedor NO puede liberar el pago él mismo. El estado de custodia se ve en el pedido, en Mi cuenta (comprador y vendedor) y en el chat.
-- **Estadísticas públicas:** en la portada se ven los conteos en vivo de la base de datos — usuarios registrados, anuncios publicados, tratos cerrados y mensajes enviados — desde el endpoint público `GET /api/stats`, que devuelve solo números, ningún dato personal.
-- **Panel de administrador:** botón "Admin" en la barra superior. Entra solo el dueño del sitio, con alias y contraseña aparte de los usuarios anónimos (variables `ADMIN_ALIAS` y `ADMIN_PASSWORD`); sin esas variables, el login de admin no funciona, porque no hay ninguna contraseña por defecto en el código. El panel muestra los conteos, todos los usuarios (alias y fecha, nunca contraseñas), todos los anuncios (con su stock), todos los pedidos y todas las custodias con su estado. El admin puede borrar un anuncio sin pedidos y cancelar una custodia retenida (el pedido pasa a cancelado y la unidad vuelve al stock, con el anuncio disponible). Los usuarios normales reciben 403 en `/api/admin/*`.
-- **Perfil público y reputación:** el alias de cualquier vendedor es clicable en la tienda y en el chat, y abre su perfil público (`GET /api/users/:alias/profile`, sin token, sin `password_hash` ni datos privados): miembro desde, anuncios activos (clicables), tratos cerrados como vendedor y como comprador, tratos cancelados, tiempo medio de respuesta y puntuación de reputación 0–100. El tiempo de respuesta es la **mediana** del tiempo entre un mensaje recibido y la respuesta de ese usuario en el mismo chat; si no hay ningún par mensaje/respuesta, muestra "Sin datos". No hay estrellas ni valoraciones inventadas: todo sale de la base de datos.
-- **Reputación (0–100), solo con datos reales:** antigüedad `min(días, 90) / 90 × 20` (hasta 20 puntos) + tratos cerrados `min(cerrados, 10) / 10 × 60` (hasta 60 puntos) + fiabilidad `20` si no hay tratos cancelados, `10` menos por cada cancelado, hasta `0`. Ejemplos: usuario nuevo (0 días, 0 tratos, 0 cancelados) = 20; 10 tratos, 90 días y 0 cancelados = 100; 5 tratos, 45 días y 1 cancelado = 50.
-- **Insignias (la primera que se cumpla, en este orden):** `✓ Verificado` (dorado, solo el alias de `ADMIN_ALIAS`, el dueño del sitio) · `Top` (10 o más tratos cerrados y 90 o más días) · `Confiable` (3 o más tratos cerrados y 0 tratos cancelados) · `Nuevo` (todo lo demás). La insignia se calcula en el servidor (`src/reputation.js`) y viaja con el perfil y con cada anuncio (`seller_badge`); el cliente solo la muestra, nunca la calcula, así no hay dos versiones distintas de los umbrales.
-- **Rangos con letras (jerarquía, asignados por el admin):** A = Admin, M = Moderador, V = Veterano, N = Nuevo usuario (por defecto al registrarse, columna `users.rank`). El admin (alias de `ADMIN_ALIAS`) tiene TODAS las letras (A, M, V, N); el moderador muestra M, V y N; el veterano V y N; el nuevo solo N. Las letras se muestran con color junto a la insignia de reputación en la tienda, el chat y el perfil público (A dorado, M azul, V verde, N gris). El admin cambia el rango desde el panel (selector M/V/N por usuario; el rango Admin no se puede asignar a nadie más ni quitarse al propio admin): `POST /api/admin/users/:id/rank {rank}`. El rango viaja con el perfil (`rank`, `rank_letter`, `rank_label`, `rank_badges`), con cada anuncio (`seller_rank`, `seller_rank_badges`) y con cada mensaje del chat (`sender_rank`, `sender_rank_badges`). Se calcula en el servidor (`src/reputation.js`: `rankInfo`/`effectiveRank`), nunca en el cliente.
-- **Verificación de usuarios:** el admin puede verificar a cualquier usuario desde el panel (botón "Verificar" / "Quitar verificación", columna `users.verified`): un usuario verificado muestra la insignia `✓ Verificado` junto a sus letras de rango en la tienda, el chat y el perfil público (`POST /api/admin/users/:id/verify {verified: true/false}`). El admin (alias de `ADMIN_ALIAS`) siempre se muestra verificado y no se le puede quitar. La verificación viaja con el perfil (`verified`), con cada anuncio (`seller_verified`) y con cada mensaje del chat (`sender_verified`).
-- **Contactar al vendedor sí abre el chat para preguntar:** sin sesión, el botón avisa en la página "Entra con tu alias para preguntar al vendedor" y lleva al registro (antes saltaba al registro sin decir nada y parecía no hacer nada); con sesión, abre la conversación, la deja seleccionada, muestra el formulario con "Pregunta por el producto, el precio, el envío…" y pone el foco en el input. Los errores al abrir el chat se ven en la página, no con `alert()`. La causa no era el servidor (POST /api/chat sí creaba la conversación): era el cliente, que disparaba dos cargas de conversaciones en paralelo sin esperar a ninguna.
-- **Error "Anuncio no válido" al contactar (corregido):** la causa real era el botón, no el servidor. En `listingCardHtml` (`public/app.js`) el botón se construía con comillas simples y `data-id="${l.id}"` quedaba en literal, sin interpolar: cada clic mandaba `listing_id: null` y el servidor devolvía 400 "Anuncio no válido". Ahora el botón usa backticks y el id llega numérico. Además `openChatForListing` valida el id en el cliente antes de llamar a la API (si no es un entero positivo, avisa en la página y no llama al servidor), y el servidor devuelve un mensaje claro y registra el cuerpo recibido si llega un id malo. Las pruebas de API no lo cazaron porque llamaban a `POST /api/chat` directamente con un id numérico; por eso existe `scripts/test-contact-click.js`, que pulsa el botón de verdad con un navegador sin interfaz (jsdom).
-- **Contacto pendiente tras entrar:** si se pulsa "Contactar al vendedor" sin haber entrado, la intención se guarda (`rd_pending_contact` en sessionStorage) y al entrar con éxito (registro o inicio de sesión) se abre automáticamente ese chat, en vez de dejar al usuario en la tienda.
-- **Chat en vivo:** el chat se refresca solo cada 5 s (lista de conversaciones y mensajes del chat abierto) y el botón Mensajes muestra un badge con el nº de conversaciones con mensajes nuevos sin leer (`GET /api/chat` trae el último mensaje de cada conversación). El refresco no roba el foco ni reinicia el scroll mientras se escribe: si no hay nada nuevo no se toca el DOM; si lo hay y se estaba abajo del todo, baja solo.
+- **Registro e inicio de sesión:** solo con **nombre real + correo + contraseña**. Al registrarse llega un código de verificación de 6 dígitos al correo (Resend) y el perfil muestra el nombre real; el alias queda como @usuario. **El registro NO devuelve token de sesión:** quien se acaba de registrar no queda dentro; solo se muestra el paso de verificación (poner el código o reenviarlo) y «Lo haré después» vuelve al inicio de sesión sin sesión. El inicio de sesión es solo con correo y contraseña: no hay login por alias ni cuentas viejas que mantener. **La entrada queda bloqueada hasta confirmar el correo:** sin verificar, el login responde 403 (`email_verification_required`) y la página muestra el paso de verificación (poner el código o reenviarlo) para confirmarlo ahí mismo. Las contraseñas se guardan cifradas con bcrypt. Sin teléfono ni ubicación. No se guarda ni se muestra la ubicación de nadie.
+- **Verificación y recuperación por correo (Resend):** «¿Olvidaste tu contraseña?» manda un código de 6 dígitos al correo (hash SHA-256, caduca en 15 minutos, un solo uso). El código de verificación al registrarse usa el mismo sistema, en su propia tabla (`email_verification_codes`): un código de verificación no sirve para cambiar la contraseña ni al revés. Sin `RESEND_API_KEY` no se manda nada y la respuesta es siempre la misma, exista o no el correo. `GET /api/auth/config` dice si el correo está disponible.
+- **Perfil estilo Facebook:** portada, foto de perfil, biografía y publicaciones. Desde «Editar perfil» se suben la portada y la foto (JPG/PNG, hasta 5 MB) y se cambia la bio (300 caracteres). Las fotos persisten.
+- **Feed con pestañas:** Para ti (todo, lo más reciente), Siguiendo (solo la gente que sigues) y Tendencias (lo más gustado de la última semana).
+- **Publicaciones:** texto (hasta 2.000 caracteres) con foto opcional (JPG/PNG, 5 MB) y sentimiento/actividad opcional (hasta 60 caracteres, se muestra bajo el autor: «😊 se siente feliz»). Reacciones múltiples: 👍 Me gusta, ❤️ Me encanta y 😮 Me asombra — la misma reacción dos veces la quita, otra distinta cambia el tipo. **Compartir** con contador guardado (cada Compartir cuenta) y menú para compartir la publicación: a tu historia, a un grupo, enviar a un amigo por mensaje, copiar enlace (enlace directo `#post-<id>`) o compartir fuera de la app. Comentarios y borrar la propia. La tarjeta del autor lleva su insignia (Admin si es el dueño), verificación y avatar.
+- **Historias y reels con foto y vídeo:** las historias duran 24 horas, los reels se quedan. Se suben con texto, foto o vídeo corto (MP4/WebM, hasta 20 MB). Un reel sin medio no es un reel: exige foto o vídeo. Los vídeos se sirven con Range, así el reproductor puede adelantar. Me gusta en historias y reels.
+- **Seguir y amigos:** seguir/dejar de seguir desde el perfil o desde Explorar. Listas públicas de seguidores y seguidos, y lista de amigos (seguimiento mutuo) con los amigos en común visibles en el perfil.
+- **Explorar y Tendencias:** publicaciones para descubrir, hashtags y personas sugeridas (con seguidores en común).
+- **Grupos:** crear un grupo (nombre + descripción) o unirse a los que hay. El número de miembros es real: cuenta a todos los que se unieron. Detalle con la lista de miembros y **muro del grupo**: solo los miembros publican y leen el muro (texto y foto), y solo el autor o el creador del grupo borran una publicación del muro.
+- **Mensajes directos:** hilos privados entre dos usuarios (uno por pareja). Al abrir un hilo, los mensajes que te mandaron se marcan como leídos; el globo de Mensajes muestra los que quedan sin leer (por hilo y en total). El chat se refresca solo cada 5 s y no roba el foco ni reinicia el scroll mientras se escribe. Desde el perfil de cualquier persona se abre su hilo con el botón «Mensaje», y en Mensajes hay «Nuevo mensaje» para elegir a quién escribir.
+- **Campana de notificaciones:** las últimas 30, derivadas de la actividad real — reacciones y comentarios en tus publicaciones y nuevos seguidores —, con el número de no vistas. Al abrir la campana se marcan como vistas.
+- **IA propia (por reglas, sin llave externa):** la asistente responde dudas con las reglas reales de la plataforma (publicar, historias y reels con foto y vídeo, seguir, grupos, mensajes, Explorar, perfil, contraseña, verificación, antigüedad). Si le preguntan por comprar, vender o pagar, dice claro que Robin Dark ya no tiene tienda. Recomienda reels y publicaciones de la gente a la que sigues (con su motivo); sin actividad, la lista viene vacía.
+- **Moderación automática:** el spam de promesas de dinero y los insultos se rechazan al publicar (422 con el motivo). Los enlaces, teléfonos y WhatsApp/Telegram se publican pero quedan marcados (tabla `moderation_flags`); no hay cola de revisión ni panel: el contenido marcado queda visible.
+- **Sin rangos ni panel de admin:** no hay rangos con letras (A/M/V/N), ni rol de moderador, ni panel de administrador. La columna vieja `users.rank` queda en la base sin usarse, para no borrar datos.
+- **El dueño (Admin especial):** la cuenta cuyo alias es `ADMIN_ALIAS` lleva la insignia especial dorada «Admin» y el ✓ Verificado azul, solo ella. Entra como un usuario más, sin login aparte ni contraseña de admin. Es la única que aprueba las solicitudes de verificación, desde su propio perfil.
+- **Nuevo y Antiguo:** el perfil nuevo muestra la insignia «Nuevo» los primeros 30 días; a partir de los 90 días el perfil lleva un marco dorado especial de «Antiguo». Ambos salen de la fecha de creación de la cuenta.
+- **Verificación de usuarios:** para pedir la verificación hay que tener **500 o más amigos o 500 o más seguidores**. El usuario la pide desde su Perfil con su nombre real y una foto de su documento (JPG/PNG, 5 MB); el dueño la aprueba o la rechaza desde su propio perfil, en su lista pequeña de solicitudes (`GET /api/users/me/verification-requests`). Solo los aprobados muestran la insignia ✓ Verificado. El nombre de tu documento nunca se muestra en público: el documento solo lo abre el propio solicitante o el dueño. (El nombre real del perfil sí se muestra: es el que se pone al registrarse.)
+- **Valoraciones con estrellas:** de 1 a 5, una por usuario (se puede cambiar). La media sale en el perfil público; no toca la reputación calculada.
+- **Perfil público y reputación:** el alias de cualquier usuario es clicable y abre su perfil público (`GET /api/users/:alias/profile`, sin token, sin `password_hash` ni datos privados): nombre real (el que se muestra en el perfil), miembro desde, bio, publicaciones, seguidores, seguidos, amigos y amigos en común, tiempo medio de respuesta en mensajes y puntuación de reputación 0–100. El tiempo de respuesta es la **mediana** del tiempo entre un mensaje recibido y la respuesta de ese usuario en el mismo hilo; si no hay ningún par mensaje/respuesta, muestra «Sin datos».
+- **Reputación (0–100), solo con datos reales:** antigüedad `min(días, 90) / 90 × 20` (hasta 20 puntos) + actividad `min(posts, 10) / 10 × 40` (hasta 40 puntos) + comunidad `min(seguidores, 10) / 10 × 20` (hasta 20 puntos) + fiabilidad `20` si ningún contenido suyo fue quitado por moderación, `10` menos por cada contenido quitado, hasta `0`. Ejemplos: usuario nuevo (0 días, 0 posts, 0 seguidores, 0 quitados) = 20; 10 posts, 10 seguidores, 90 días y 0 quitados = 100; 5 posts, 5 seguidores, 45 días y 1 quitado = 50.
+- **Insignias (la primera que se cumpla, en este orden):** `Admin` (dorada, solo el alias de `ADMIN_ALIAS`, el dueño del sitio) · `Nuevo` (menos de 30 días) · `Top` (10 o más posts y 90 o más días) · `Confiable` (3 o más posts y 0 contenidos quitados) · `Miembro` (todo lo demás). La insignia se calcula en el servidor (`src/reputation.js`) y viaja con el perfil; el cliente solo la muestra, nunca la calcula, así no hay dos versiones distintas de los umbrales. La antigüedad (`seniority`: `nuevo` < 30 días, `antiguo` ≥ 90 días) también viaja con el perfil y es la que pinta el marco dorado de «Antiguo».
 - **Sin JS viejo en el teléfono tras cada despliegue:** `index.html` nunca se guarda en caché (`no-store`) y `app.js`/`styles.css` se sirven con versión (`?v=` según la fecha de los archivos), así que tras un despliegue el navegador pide el JS nuevo.
-- **Mi cuenta:** mis anuncios, mis compras y mis ventas, cada pedido con su estado de custodia.
-- **Pagos solo en BTC:** los precios se escriben en BTC, se guardan en la base de datos como satoshis y se muestran con el símbolo ₿. No hay USD en ningún lado.
-- **Descripción principal:** solo bienvenida y propósito del mercado. No enumera ejemplos de artículos.
+- **Fotos y vídeos:** avatar, portada, documento, fotos de posts y medio de historias/reels. Por defecto los bytes van a la tabla `photos` (funciona sin crear ninguna cuenta ni poner ninguna llave). Con `PHOTO_STORAGE=r2` van a Cloudflare R2 (variables `R2_*`); si falta alguna, se avisa por consola y se usa la base de datos. Ver `.env.example`.
 
 ## Estructura
 
 ```
 robin-dark-js/
-├── package.json            # dependencias y scripts (start: node server.js)
+├── package.json            # dependencias y scripts (start: node server.js; test: 5 suites)
 ├── server.js               # entrada: Express, rutas, archivos públicos
 ├── railway.json            # configuración de despliegue en Railway
 ├── .env.example            # variables que hay que configurar
@@ -40,35 +43,59 @@ robin-dark-js/
 │   └── schema.sql          # esquema Postgres (referencia; la app crea las tablas sola)
 ├── src/
 │   ├── db.js               # Postgres (DATABASE_URL) o SQLite local (node:sqlite)
-│   ├── auth.js             # hash bcrypt + JWT
-│   ├── reputation.js       # reputación 0–100 e insignias (solo datos reales)
+│   ├── auth.js             # hash bcrypt + JWT (+ hash de códigos de recuperación)
+│   ├── reputation.js       # reputación 0–100, insignias (Nuevo/Antiguo/Admin) y antigüedad (solo datos reales)
+│   ├── photos.js           # fotos y vídeos: validación, guardado (db o R2), URLs
+│   ├── r2.js               # cliente Cloudflare R2 (opcional)
+│   ├── mail.js             # Resend (códigos por correo: verificación y recuperación)
+│   ├── moderation.js       # moderación automática por reglas (block/flag/ok)
+│   ├── ai.js               # IA propia por reglas (asistente + recomendaciones)
+│   ├── present.js          # tarjetas de autor (is_admin, verificación, avatar)
 │   ├── middleware/
-│   │   └── auth.js         # requireAuth (Bearer JWT) y requireAdmin (JWT con role: 'admin')
+│   │   ├── auth.js         # requireAuth y optionalAuth (Bearer); el dueño se reconoce por alias (ADMIN_ALIAS)
+│   │   ├── rateLimit.js    # límites por IP (API, auth, recuperación, IA)
+│   │   └── validate.js     # validación de cuerpo e IDs
 │   └── routes/
-│       ├── admin.js        # POST /api/admin/login · GET /api/admin/stats|users|listings|orders|escrows · DELETE /api/admin/listings/:id · POST /api/admin/escrows/:id/cancel
-│       ├── auth.js         # POST /api/auth/register, /login · GET /api/auth/me
-│       ├── users.js        # GET /api/users/:alias/profile (público: perfil, reputación, insignia, tiempo de respuesta)
-│       ├── listings.js     # GET/POST /api/listings (búsqueda, publicar con stock) · GET /api/listings/all (todas las publicaciones, contadores y filtro por estado) · POST /api/listings/:id/mark-out-of-stock · POST /api/listings/:id/restock
-│       ├── orders.js       # POST /api/orders/mark-sold (solo vendedor, con confirmación; descuenta 1 de stock) · POST /api/orders/:id/confirm-receipt (solo comprador, libera la custodia) · GET /api/orders/account
-│       ├── stats.js        # GET /api/stats (conteos públicos: usuarios, anuncios, tratos cerrados, mensajes)
-│       └── chat.js         # GET/POST /api/chat y /api/chat/:id/messages (enviar un mensaje nunca vende)
+│       ├── auth.js         # POST /api/auth/register, /login, /verify-email, /resend-verification ·
+│       │                   #   GET /api/auth/me|config · POST /api/auth/forgot|reset (código por correo)
+│       ├── users.js        # GET /api/users/me · PATCH /api/users/me/profile ·
+│       │                   #   GET /api/users/:alias/profile|posts|followers|following|friends ·
+│       │                   #   POST /api/users/:alias/rate · verificación con documento
+│       │                   #   (puerta de 500; el dueño aprueba desde su perfil)
+│       ├── social.js       # feed, posts, reacciones, compartir, likes, comentarios, historias/reels,
+│       │                   #   seguir, tendencias, explorar, notificaciones
+│       ├── groups.js       # GET/POST /api/social/groups · join/leave · detalle · muro
+│       ├── chat.js         # mensajes directos: hilos, enviar, no leídos
+│       ├── ai.js           # POST /api/ai/ask · GET /api/ai/recommendations
+│       ├── photos.js       # GET/DELETE /api/photos/:id (con Range para vídeo)
+│       └── stats.js        # GET /api/stats (conteos públicos)
 └── public/
-    ├── index.html          # interfaz
+    ├── index.html          # interfaz (diseño oscuro estilo GM Social)
     ├── app.js              # lógica del navegador (fetch a la API)
-    └── styles.css          # diseño negro + dorado 3D
+    └── styles.css          # diseño oscuro morado/azul con fantasma
 ```
 
 ### Tablas (base de datos)
 
 | Tabla | Guarda |
 |---|---|
-| `users` | alias, contraseña cifrada, fecha de creación |
-| `listings` | vendedor, título, descripción, `price_sats`, `stock` (unidades que quedan, por defecto 1), estado (disponible/agotado; `vendido` es antiguo) |
-| `orders` | anuncio, comprador, vendedor, `price_sats`, estado de custodia (`retenido` → `liberado`; `pagado_btc`/`completado` son estados antiguos) |
-| `conversations` | anuncio, comprador, vendedor (única por los tres) |
-| `messages` | conversación, remitente, texto |
-
-1 BTC = 100.000.000 satoshis. Ejemplo: 0,015 BTC = 1.500.000 sats.
+| `users` | nombre real, alias, contraseña cifrada, correo (obligatorio al registrarse) y si está verificado, bio, avatar/cover, verificación, `notif_seen_at` (hasta cuándo vio su campana), fecha (la columna vieja `rank` queda sin uso) |
+| `photos` | dueño, tipo (avatar/cover/document/post), mime, tamaño, dónde viven los bytes (db o R2) |
+| `password_resets` | usuario, hash del código, caducidad (ms), usado |
+| `email_verification_codes` | usuario, hash del código de verificación del correo, caducidad (ms), usado |
+| `verification_requests` | usuario, nombre real, foto del documento, estado (pending/approved/rejected) |
+| `posts` | autor, texto, sentimiento, foto, borrado suave |
+| `post_likes` / `post_comments` | Reacciones (like/love/wow) y comentarios de posts |
+| `post_shares` | Cada Compartir de un post (el contador es el nº de filas) |
+| `stories` | autor, tipo (story 24h / reel), texto, estilo, foto/vídeo, caducidad (ms) |
+| `story_likes` | Me gusta de historias y reels |
+| `follows` | seguidor → seguido (único, sin seguirse a uno mismo) |
+| `ratings` | valoraciones con estrellas (1–5, una por usuario) |
+| `moderation_flags` | contenido marcado, motivo (sin cola de revisión) |
+| `groups` / `group_members` | grupos y sus miembros |
+| `group_posts` | muro del grupo: autor, texto, foto, borrado suave |
+| `dm_threads` / `dm_messages` | hilos de mensajes directos y mensajes (con `read_at`) |
+| `listings`, `orders`, `conversations`, `messages` | **Sin uso** (tienda retirada 2026-11-20; datos viejos intactos) |
 
 ## Correr en local
 
@@ -80,96 +107,90 @@ npm start
 # Abre http://localhost:3000
 ```
 
-Sin `DATABASE_URL`, usa SQLite en `data/robin-dark.db` (se crea sola). Para probar con Postgres en local, pon `DATABASE_URL=postgres://usuario:clave@localhost:5432/robin_dark` en `.env`.
+Sin `DATABASE_URL`, usa SQLite en `data/robin-dark.db` (se crea sola). Para probar con Postgres en local, pon `DATABASE_URL=<redacted>
 
 ### Probar la API con curl
 
 ```bash
-# Perfil público de un vendedor (sin token)
-curl http://localhost:3000/api/users/vendedor1/profile
-# {"alias":"vendedor1","member_since":"...","member_days":0,"is_admin":false,
+# Perfil público (sin token)
+curl http://localhost:3000/api/users/ana/profile
+# {"alias":"ana","real_name":"Ana María","member_since":"...","member_days":0,"is_admin":false,
 #  "badge":{"key":"nuevo","label":"Nuevo"},"reputation":20,
-#  "active_listings_count":1,"active_listings":[...],
-#  "closed_as_seller":0,"closed_as_buyer":0,"closed_total":0,"cancelled":0,
+#  "posts_count":0,"followers_count":0,"removed_by_moderation":0,
 #  "response_minutes":null,"response_time":"Sin datos"}
-```
 
-### Pruebas locales (perfil, reputación, insignias y contacto)
-
-```bash
-node scripts/test-profile.js
-# 60 pruebas: perfil público, reputación, insignias (Nuevo/Confiable/
-# Top/Verificado), tiempo de respuesta, contacto y chat, venta con
-# custodia y cancelación. Usa una base SQLite nueva y vacía y la
-# borra al terminar; no toca el sitio público.
-```
-
-### Pruebas locales (rangos con letras y verificación)
-
-```bash
-node scripts/test-ranks.js
-# 66 pruebas: registro con rango N por defecto; el admin (alias de
-# ADMIN_ALIAS) con las 4 letras (A, M, V, N) y siempre verificado;
-# cambio de rango por el admin (M → 3 letras, V → 2, N → 1) y
-# rechazo sin token de admin, de asignar 'admin' a otro usuario, de
-# cambiar el rango del propio admin y de un rango no válido; la
-# verificación solo la cambia el admin (aparece en perfil, anuncios
-# y mensajes del chat; al admin no se le puede quitar) y el rango
-# aparece en el perfil público, en la tienda y en el chat. Usa una
-# base SQLite nueva y vacía y la borra al terminar; no toca el
-# sitio público.
-```
-
-### Pruebas locales (apartado Publicaciones)
-
-```bash
-node scripts/test-publicaciones.js
-# 28 pruebas: publica 2 anuncios con stock, marca uno agotado y
-# verifica que GET /api/listings/all muestra ambos con contadores
-# correctos (total 2, disponibles 1, agotadas 1, vendedores 1), que
-# el filtro Todas/Disponibles/Agotadas funciona, que la Tienda sigue
-# mostrando solo el disponible y que contactar por el agotado da
-# 409. Usa una base SQLite nueva y vacía y la borra al terminar;
-# no toca el sitio público.
-```
-
-### Pruebas locales (clic real en "Contactar al vendedor")
-
-```bash
-node scripts/test-contact-click.js
-# Reproduce el flujo del cliente con un navegador sin interfaz
-# (jsdom, dependencia de desarrollo): pulsa de verdad el botón
-# "Contactar al vendedor" en la Tienda y verifica que el POST
-# /api/chat lleva el id numérico del anuncio; que un id perdido
-# (NaN/undefined) se bloquea en el cliente sin llamar a la API;
-# que contactar sin sesión y luego entrar abre ese chat
-# automáticamente; que el JS se sirve versionado y el HTML sin
-# caché; y que el chat se actualiza en vivo con el badge de
-# mensajes nuevos. Usa una base SQLite nueva y vacía y la borra
-# al terminar; no toca el sitio público.
-```
-
-```bash
 # Salud
 curl http://localhost:3000/api/health
 
-# Registrar (vendedor)
+# Registrar (nombre real + correo + contraseña; llega un código
+# de verificación de 6 dígitos al correo. No devuelve token: hay
+# que verificar el correo y luego entrar)
 curl -s -X POST http://localhost:3000/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"alias":"vendedor1","password":"secreto123"}'
+  -d '{"real_name":"Ana María","alias":"ana","password":"secreto123","email":"ana@example.com"}'
 
-# Entrar y guardar el token
+# Verificar el correo con el código que llegó
+curl -s -X POST http://localhost:3000/api/auth/verify-email \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ana@example.com","code":"123456"}'
+
+# Entrar y guardar el token (solo con correo y contraseña)
 TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"alias":"vendedor1","password":"secreto123"}' | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).token))")
+  -d '{"email":"ana@example.com","password":"secreto123"}' | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).token))")
 
-# Publicar (precio en BTC, se guarda en satoshis)
-curl -s -X POST http://localhost:3000/api/listings \
+# Publicar
+curl -s -X POST http://localhost:3000/api/social/posts \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"Artículo de prueba","description":"Descripción de prueba","price_btc":0.015}'
+  -d '{"text":"Hola, este es mi primer post."}'
 
-# Buscar
-curl 'http://localhost:3000/api/listings?search=prueba'
+# Feed
+curl 'http://localhost:3000/api/social/feed?tab=para_ti'
+
+# Preguntar a la IA
+curl -s -X POST http://localhost:3000/api/ai/ask \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"question":"¿Cómo subo un vídeo a mi historia?"}'
+```
+
+### Pruebas locales
+
+```bash
+npm test
+# 5 suites, cada una con su base SQLite nueva y vacía (la borra al
+# terminar); no tocan el sitio público:
+# - test-auth-realname.js (49): registro solo con nombre real +
+#   correo + contraseña, SIN token (sin sesión hasta verificar el
+#   correo), envío del código de verificación con un
+#   Resend falso en local, verificación (un solo uso, caducidad,
+#   reenvío que anula el anterior), login solo por correo y
+#   contraseña (sin login por alias) BLOQUEADO con 403 hasta
+#   confirmar el correo y funcionando después de verificarlo,
+#   perfil con nombre real.
+# - test-badges.js (45): insignia Nuevo (< 30 días) y marco Antiguo
+#   (>= 90 días), insignia Admin + verificado solo para el dueño,
+#   sin rutas /api/admin (404), verificación con puerta de 500
+#   (409 si no llega, aprobación del dueño desde su perfil),
+#   amigos y amigos en común, muro del grupo, Compartir, y tarjetas
+#   de autor sin rangos.
+# - test-profile.js (97): perfil público, reputación social, insignias
+#   (Nuevo/Top/Confiable/Admin), antigüedad, tiempo de respuesta en
+#   mensajes directos, seguir y amigos, moderación (fórmula unitaria),
+#   y cliente sin tienda (sin /api/listings, /api/orders, BTC ni
+#   escrow; con badgeHtml, antigüedad, menú de compartir y amigos).
+# - test-social.js (80): registro con nombre real + correo (sin token
+#   hasta verificar) y login solo por correo (sin login por alias)
+#   bloqueado con 403 antes de confirmar el correo, recuperación genérica,
+#   avatar, posts con moderación, feed,
+#   likes, comentarios, seguir, historias, reels, tendencias, IA,
+#   valoraciones, verificación con documento (privado, puerta de 500,
+#   aprobación del dueño) y sin panel de admin, reacciones 👍/❤️/😮
+#   (quitar y cambiar de tipo), Compartir con contador, sentimiento
+#   del compositor y notificaciones.
+# - test-groups-dm.js (46): grupos (crear/unirse/salir/conteo real),
+#   muro del grupo, mensajes directos (hilo, no leídos, marcar leído,
+#   403 a terceros), historias con foto y reels con vídeo (Range 206),
+#   IA sin comercio y stats sin tienda ni panel de admin.
 ```
 
 ## Publicar en Railway (recomendado)
@@ -181,45 +202,40 @@ Railway corre la app y la base de datos juntas, sin que la página se duerma. Pr
 3. **Añade Postgres:** en el lienzo del proyecto, *New → Database → Add PostgreSQL*. Railway crea `DATABASE_URL` automáticamente y se la pasa a la app.
 4. **Variables:** en el servicio web, *Variables*, añade:
    - `JWT_SECRET` = una cadena larga y secreta (cámbiala, no uses la de ejemplo)
-   - `ADMIN_ALIAS` = tu alias de administrador (por ejemplo `admin`)
-   - `ADMIN_PASSWORD` = una contraseña larga y secreta, solo para el panel de administrador. Sin estas dos variables, el panel no deja entrar a nadie.
+   - `ADMIN_ALIAS` = el alias de tu cuenta de dueño (por ejemplo `admin`): esa cuenta lleva la insignia especial «Admin» y el ✓ Verificado, y aprueba las verificaciones desde su perfil. No hay contraseña de admin ni panel.
    - `DATABASE_URL` ya la pone Railway al añadir Postgres; si no aparece, usa *Reference* → la variable `DATABASE_URL` del servicio Postgres.
+   - `RESEND_API_KEY` = la llave de Resend (solo envío) para que los códigos de verificación y de recuperación lleguen de verdad. **Obligatoria en producción:** sin ella no se envía ningún código y, como el login queda bloqueado hasta confirmar el correo, nadie podría entrar. Sin ella, el registro funciona igual pero el código no se envía, y la recuperación responde siempre lo mismo sin mandar nada. No pongas nunca `RESEND_API_URL` en Railway: esa variable solo existe para las pruebas locales (servidor falso de Resend).
+   - Opcional: `PHOTO_STORAGE=r2` + `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (y `R2_PUBLIC_URL` si se quiere servir las fotos directas desde R2). Sin estas, las fotos van a la base de datos (el disco de Railway es efímero: con muchos usuarios conviene R2).
    - Opcional: `PGSSL=false` solo si tu Postgres no usa SSL (en Railway no hace falta).
 5. **Despliega:** Railway detecta `railway.json` y arranca con `node server.js`. El healthcheck es `GET /api/health`.
-6. **Abre el enlace:** en el servicio web, *Settings → Networking → Generate Domain*. Ese es el enlace público de Robin Dark. Las tablas se crean solas al arrancar; si prefieres crearlas a mano, ejecuta `db/schema.sql` contra esa base de datos.
+6. **Abre el enlace:** en el servicio web, *Settings → Networking → Generate Domain*. Ese es el enlace público de Robin Dark. Las tablas se crean solas al arrancar (migraciones aditivas, sin borrar nada); si prefieres crearlas a mano, ejecuta `db/schema.sql` contra esa base de datos.
 
 > Nota: no subas `.env` ni la carpeta `data/` a GitHub (ya están en `.gitignore`). En Railway las variables van en el panel, no en el código.
 
+> **Antes de tocar la base en vivo: respaldo.** Las migraciones son aditivas (solo añaden columnas y tablas), pero un respaldo de la base de Railway antes de desplegar es lo que permite volver atrás si algo sale mal.
+
 ## Seguridad y privacidad
 
-### Probar el panel de administrador en local
+### El dueño en local
 
 ```bash
 # En .env (nunca se sube a GitHub), añade:
 ADMIN_ALIAS=admin
-ADMIN_PASSWORD=una-contrasena-larga-y-secreta
-JWT_SECRET=otra-clave-larga-y-secreta
-npm start
-# Abre http://localhost:3000, pulsa "Admin" y entra con ese alias y contraseña.
-# Sin ADMIN_ALIAS y ADMIN_PASSWORD, el login de admin responde 503.
+
+# Registra en http://localhost:3000 una cuenta con ese alias
+# (nombre real, correo y contraseña; alias: admin) y entra normal
+# con tu correo: verás la insignia «Admin» y el
+# ✓ Verificado en tu perfil, y en tu propio perfil aparecerá la
+# lista de solicitudes de verificación para aprobarlas. No hay
+# botón «Admin» ni login aparte.
 ```
 
-- Contraseñas con bcrypt (hash + sal, 12 rondas); nunca se guardan en claro. Máximo 72 bytes: bcrypt trunca en silencio más allá de esa longitud.
-- Sesión con JWT (30 días) en el encabezado `Authorization: Bearer`, algoritmo fijado a HS256.
-- **JWT_SECRET obligatorio en producción:** si `DATABASE_URL` está puesto (Railway) y `JWT_SECRET` falta o tiene menos de 32 caracteres, el servidor NO arranca. Ya no hay secreto por defecto en el código.
-- **Límites de velocidad:** login/registro 10 intentos por IP cada 15 min; login de admin 5 intentos por IP cada 15 min; API en general 300 peticiones por IP cada 15 min. El login con alias inexistente tarda lo mismo que con alias existente (comparación bcrypt falsa) para no filtrar qué alias existen.
-- **Cabeceras de seguridad (helmet):** Content-Security-Policy estricta (solo recursos del propio sitio), no se puede meter la tienda en un iframe de otra web, nosniff y HSTS.
-- **Escrow sin carreras:** marcar como vendido y liberar/cancelar la custodia usan actualizaciones atómicas (`UPDATE ... WHERE status=...`). Al vender, el stock se descuenta de forma atómica (`UPDATE ... SET stock = stock - 1 WHERE status='disponible' AND stock > 0`): dos ventas a la vez de la última unidad no pueden crear dos pedidos ni dejar el stock en negativo. Un mismo anuncio puede tener muchos pedidos, uno por unidad vendida; por eso se eliminó el índice único de un pedido por anuncio. Para cerrar un trato tiene que haber al menos un mensaje en el chat.
-- **Validación de entradas:** IDs numéricos, cuerpos JSON que sean objetos, búsqueda limitada a 100 caracteres con comodines `%`/`_` escapados, precio máximo de 21.000.000 BTC y satoshis como entero seguro, stock entero entre 1 y 10.000.
-- **Sin inyección SQL:** todas las consultas usan parámetros (`$1`, `$2`…); la búsqueda usa `LIKE` parametrizado con `ESCAPE`.
-- **Marcadores repetidos en SQLite:** un mismo `$N` usado dos veces en una consulta (por ejemplo `WHERE buyer_id = $1 OR seller_id = $1`) se convierte en dos `?` y `node:sqlite` pone el segundo en `NULL` sin avisar: el vendedor no veía sus conversaciones, la búsqueda por descripción no encontraba nada y el tiempo de respuesta del vendedor salía vacío en local. En `src/db.js` cada aparición del marcador recibe ahora su propio valor duplicado. En Postgres no hacía falta (reutiliza el parámetro), pero la corrección vale para los dos motores.
-- **Sin XSS en la interfaz:** todos los datos de usuarios (alias, títulos, descripciones, mensajes) se escapan antes de insertarlos en el HTML.
-- **Autorización:** cada chat, pedido y anuncio se comprueba contra el usuario del token (nadie ve el chat de otro, nadie marca vendido el anuncio de otro, solo el comprador libera su custodia, solo el vendedor la marca). El panel de admin exige JWT con `role: 'admin'`; un usuario normal recibe 403. El admin nunca se hace pasar por un usuario en el chat.
-- El panel de admin usa un JWT aparte con `role: 'admin'`; las credenciales de admin viven solo en variables de entorno y no hay ninguna contraseña por defecto en el código.
-- No hay geolocalización, ni correo, ni teléfono, ni IP guardada en la base de datos.
-- En producción, pon un `JWT_SECRET` largo y distinto, y usa HTTPS (Railway lo da con su dominio).
+### Qué protege la app
 
-### Riesgos que quedan (conocidos, no corregidos aquí)
-- El token JWT se guarda en `localStorage` del navegador: si un día hubiera un XSS, el token podría robarse. La CSP estricta y el escapado de todo el contenido lo hacen muy difícil, pero no imposible. La alternativa (cookies httpOnly) exigiría cambiar toda la autenticación.
-- No hay revocación de sesiones en el servidor: "Salir" solo borra el token del navegador; un token robado vale hasta que caduque (30 días). No hay restablecimiento de contraseña (no hay correo: es anónimo por diseño).
-- Los límites de velocidad viven en la memoria del proceso: si Railway reinicia el servicio, los contadores se reinician. Para un ataque distribuido desde muchas IPs haría falta un límite por cuenta o un WAF.
+- **Contraseñas con bcrypt** (coste 12) y **JWT** con secreto fuerte obligatorio en producción (sin `JWT_SECRET` fuerte, el servidor no arranca con Postgres).
+- **Límites de velocidad por IP:** 300 peticiones / 15 min en la API, 10 intentos de login/registro, 5 de recuperación y verificación y 60 preguntas a la IA. El login con correo inexistente tarda lo mismo que con correo existente (comparación bcrypt falsa), para no filtrar qué correos están registrados.
+- **Cabeceras de seguridad** (helmet): CSP estricta (solo recursos propios), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` y HSTS.
+- **Nunca se devuelve `password_hash`**, ni el correo en el perfil público, ni el nombre real ni el documento de la solicitud de verificación (el documento solo lo abre el propio solicitante o el dueño). El nombre real del perfil sí se muestra: es el nombre que se pone al registrarse.
+- **Códigos de verificación y de recuperación** con hash SHA-256, 15 minutos y un solo uso; la respuesta de `/forgot` y de `/resend-verification` es siempre la misma, exista o no el correo.
+- **Moderación:** el spam y los insultos se rechazan al publicar (422); el contenido marcado se publica y queda registrado, sin cola de revisión.
+- **Fotos privadas:** el documento de identidad es privado por tipo (`document`); avatar, portada, posts e historias son públicos.

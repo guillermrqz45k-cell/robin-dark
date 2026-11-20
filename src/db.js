@@ -147,6 +147,256 @@ async function init() {
       ALTER TABLE orders ADD CONSTRAINT orders_status_check
         CHECK (status IN ('retenido', 'liberado', 'pagado_btc', 'completado', 'cancelado'));
     `);
+    // Migración social + IA (2026-11-20): red social, registro por
+    // correo, verificación con documento, fotos, moderación e IA.
+    // Todo aditivo: no se borra ni se cambia nada de lo que ya hay.
+    // - users.email: nullable y único en la base (NULL no choca
+    //   con NULL en Postgres); la API lo exige al registrarse
+    //   desde 2026-11-20 (nombre real + correo + contraseña, sin
+    //   cuentas viejas que mantener).
+    // - expires_at en milisegundos (BIGINT): igual en Postgres y
+    //   SQLite, sin problemas de formato de fecha entre motores.
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_photo_id INTEGER;`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_photo_id INTEGER;`);
+    try {
+      await pool.query(`ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);`);
+    } catch (e) {
+      if (!/already exists/i.test(e.message || '')) throw e;
+    }
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS photos (
+        id SERIAL PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('avatar', 'cover', 'document', 'post')),
+        mime TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+        -- Dónde viven los bytes: 'db' (BYTEA en esta misma tabla,
+        -- funciona sin ninguna cuenta ni llave) o 'r2' (Cloudflare
+        -- R2, solo la referencia en r2_key). data es NULL cuando el
+        -- backend es R2.
+        storage TEXT NOT NULL DEFAULT 'db' CHECK (storage IN ('db', 'r2')),
+        r2_key TEXT,
+        data BYTEA,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        used BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS verification_requests (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        real_name TEXT NOT NULL,
+        document_photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        review_note TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        reviewed_at TIMESTAMPTZ,
+        reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS posts (
+        id SERIAL PRIMARY KEY,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
+        photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL,
+        deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS post_likes (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (post_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS post_comments (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS stories (
+        id SERIAL PRIMARY KEY,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('story', 'reel')),
+        text TEXT NOT NULL DEFAULT '',
+        style_key TEXT NOT NULL DEFAULT '',
+        expires_at BIGINT,
+        deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS story_likes (
+        id SERIAL PRIMARY KEY,
+        story_id INTEGER NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (story_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS follows (
+        id SERIAL PRIMARY KEY,
+        follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        followed_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (follower_id, followed_id),
+        CHECK (follower_id <> followed_id)
+      );
+      CREATE TABLE IF NOT EXISTS ratings (
+        id SERIAL PRIMARY KEY,
+        rater_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        rated_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (rater_id, rated_id)
+      );
+      CREATE TABLE IF NOT EXISTS moderation_flags (
+        id SERIAL PRIMARY KEY,
+        target_type TEXT NOT NULL CHECK (target_type IN ('post', 'story', 'comment')),
+        target_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        review_note TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        reviewed_at TIMESTAMPTZ,
+        reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_posts_author ON posts (author_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_posts_created ON posts (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_post_likes_post ON post_likes (post_id);
+      CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments (post_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_stories_author ON stories (author_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows (follower_id);
+      CREATE INDEX IF NOT EXISTS idx_follows_followed ON follows (followed_id);
+      CREATE INDEX IF NOT EXISTS idx_ratings_rated ON ratings (rated_id);
+      CREATE INDEX IF NOT EXISTS idx_flags_status ON moderation_flags (status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets (user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_verif_status ON verification_requests (status, created_at DESC);
+    `);
+    // Migración red social sin tienda + grupos + mensajes directos
+    // (2026-11-20, decisión de AMO): Robin Dark ya no vende.
+    // - stories.photo_id: foto o vídeo corto del estado/reel. El
+    //   medio se guarda en photos con kind 'post' (público, como
+    //   las fotos de posts): no se toca el CHECK de kind.
+    // - groups / group_members: grupos con miembros de verdad.
+    // - dm_threads / dm_messages: mensajes directos entre
+    //   usuarios. Los chats viejos por anuncio quedan en
+    //   conversations/messages, intactos, sin usarse.
+    // Todo aditivo: no se borra ni se cambia nada de lo que ya hay.
+    await pool.query(`ALTER TABLE stories ADD COLUMN IF NOT EXISTS photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL;`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS groups (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        creator_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS group_members (
+        id SERIAL PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (group_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS dm_threads (
+        id SERIAL PRIMARY KEY,
+        user_a_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_b_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_a_id, user_b_id),
+        CHECK (user_a_id < user_b_id)
+      );
+      CREATE TABLE IF NOT EXISTS dm_messages (
+        id SERIAL PRIMARY KEY,
+        thread_id INTEGER NOT NULL REFERENCES dm_threads(id) ON DELETE CASCADE,
+        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        read_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members (group_id);
+      CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members (user_id);
+      CREATE INDEX IF NOT EXISTS idx_dm_threads_users ON dm_threads (user_a_id, user_b_id);
+      CREATE INDEX IF NOT EXISTS idx_dm_messages_thread ON dm_messages (thread_id, created_at ASC);
+    `);
+    // Migración reacciones + compartir + notificaciones + sentimiento
+    // (2026-11-20, para que el port sea fiel a la vista previa):
+    // - posts.feeling: sentimiento/actividad elegido en el
+    //   compositor (máx. 60 caracteres), se muestra bajo el autor.
+    // - post_likes.kind: la reacción es like (👍), love (❤️) o wow
+    //   (😮); una por usuario y post (el UNIQUE ya lo garantiza).
+    //   Los likes viejos quedan como 'like'.
+    // - post_shares: cada Compartir es una fila (sin deduplicar:
+    //   compartir dos veces cuenta dos veces, como en la vista
+    //   previa); el contador es el número de filas del post.
+    // - users.notif_seen_at: instante (ms) hasta el que el usuario
+    //   ya vio sus notificaciones; la campana deriva de la
+    //   actividad real (reacciones y comentarios en mis posts y
+    //   nuevos seguidores), sin tabla nueva.
+    // Todo aditivo: no se borra ni se cambia nada de lo que ya hay.
+    await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS feeling TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE post_likes ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'like';`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notif_seen_at BIGINT;`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS post_shares (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares (post_id);
+    `);
+    // Migración muro de grupo (2026-11-20): compartir en un grupo
+    // publica en su muro (texto + foto opcional, solo miembros).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS group_posts (
+        id SERIAL PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL,
+        deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_posts_group ON group_posts (group_id, created_at DESC);
+    `);
+    // Migración nombre real + verificación del correo (2026-11-20,
+    // decisión de AMO): el registro es solo con nombre real +
+    // correo + contraseña, y el correo se verifica con un código
+    // de 6 dígitos. No hay cuentas viejas que mantener: el inicio
+    // de sesión es solo con correo y contraseña, sin login por
+    // alias. Todo aditivo:
+    // - users.real_name: nombre real que se muestra en el perfil
+    //   (el alias queda como @usuario). Las cuentas que no lo
+    //   tienen muestran su alias.
+    // - users.email_verified: true cuando el correo ya se verificó
+    //   con el código (el login no exige estar verificado).
+    // - email_verification_codes: misma forma y mismas reglas que
+    //   password_resets (solo hash SHA-256, 15 minutos, un solo
+    //   uso), pero separada: un código de verificación no sirve
+    //   para cambiar la contraseña ni al revés.
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS real_name TEXT NOT NULL DEFAULT '';`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        used BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_codes_user ON email_verification_codes (user_id, created_at DESC);
+    `);
     console.log('[db] Postgres conectado (DATABASE_URL)');
   } else {
     const { DatabaseSync } = require('node:sqlite');
@@ -259,6 +509,233 @@ async function init() {
       }
       sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status, created_at DESC);`);
     }
+    // Migración social + IA en SQLite (2026-11-20): mismas tablas
+    // que en Postgres, con tipos de SQLite (BLOB para la foto,
+    // INTEGER 0/1 para booleanos). Todo aditivo.
+    const userCols2 = sqlite.prepare(`PRAGMA table_info(users)`).all();
+    if (!userCols2.some((c) => c.name === 'email')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN email TEXT;`);
+    }
+    if (!userCols2.some((c) => c.name === 'bio')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT '';`);
+    }
+    if (!userCols2.some((c) => c.name === 'avatar_photo_id')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN avatar_photo_id INTEGER;`);
+    }
+    if (!userCols2.some((c) => c.name === 'cover_photo_id')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN cover_photo_id INTEGER;`);
+    }
+    sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (email);`);
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('avatar', 'cover', 'document', 'post')),
+        mime TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+        storage TEXT NOT NULL DEFAULT 'db' CHECK (storage IN ('db', 'r2')),
+        r2_key TEXT,
+        data BLOB,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS verification_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        real_name TEXT NOT NULL,
+        document_photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        review_note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        reviewed_at TEXT,
+        reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
+        photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS post_likes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (post_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS post_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS stories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('story', 'reel')),
+        text TEXT NOT NULL DEFAULT '',
+        style_key TEXT NOT NULL DEFAULT '',
+        expires_at INTEGER,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS story_likes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (story_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS follows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        followed_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (follower_id, followed_id),
+        CHECK (follower_id <> followed_id)
+      );
+      CREATE TABLE IF NOT EXISTS ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rater_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        rated_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (rater_id, rated_id)
+      );
+      CREATE TABLE IF NOT EXISTS moderation_flags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL CHECK (target_type IN ('post', 'story', 'comment')),
+        target_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        review_note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        reviewed_at TEXT,
+        reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_posts_author ON posts (author_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_posts_created ON posts (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_post_likes_post ON post_likes (post_id);
+      CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments (post_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_stories_author ON stories (author_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows (follower_id);
+      CREATE INDEX IF NOT EXISTS idx_follows_followed ON follows (followed_id);
+      CREATE INDEX IF NOT EXISTS idx_ratings_rated ON ratings (rated_id);
+      CREATE INDEX IF NOT EXISTS idx_flags_status ON moderation_flags (status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets (user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_verif_status ON verification_requests (status, created_at DESC);
+    `);
+    // Migración red social sin tienda + grupos + mensajes directos
+    // en SQLite (2026-11-20): mismas tablas que en Postgres.
+    const storyCols = sqlite.prepare(`PRAGMA table_info(stories)`).all();
+    if (!storyCols.some((c) => c.name === 'photo_id')) {
+      sqlite.exec(`ALTER TABLE stories ADD COLUMN photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL;`);
+    }
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        creator_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS group_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (group_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS dm_threads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_a_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_b_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (user_a_id, user_b_id),
+        CHECK (user_a_id < user_b_id)
+      );
+      CREATE TABLE IF NOT EXISTS dm_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER NOT NULL REFERENCES dm_threads(id) ON DELETE CASCADE,
+        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        read_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members (group_id);
+      CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members (user_id);
+      CREATE INDEX IF NOT EXISTS idx_dm_threads_users ON dm_threads (user_a_id, user_b_id);
+      CREATE INDEX IF NOT EXISTS idx_dm_messages_thread ON dm_messages (thread_id, created_at ASC);
+    `);
+    // Migración reacciones + compartir + notificaciones + sentimiento
+    // en SQLite (2026-11-20): las mismas que en Postgres.
+    const postCols = sqlite.prepare(`PRAGMA table_info(posts)`).all();
+    if (!postCols.some((c) => c.name === 'feeling')) {
+      sqlite.exec(`ALTER TABLE posts ADD COLUMN feeling TEXT NOT NULL DEFAULT '';`);
+    }
+    const likeCols = sqlite.prepare(`PRAGMA table_info(post_likes)`).all();
+    if (!likeCols.some((c) => c.name === 'kind')) {
+      sqlite.exec(`ALTER TABLE post_likes ADD COLUMN kind TEXT NOT NULL DEFAULT 'like';`);
+    }
+    const userCols3 = sqlite.prepare(`PRAGMA table_info(users)`).all();
+    if (!userCols3.some((c) => c.name === 'notif_seen_at')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN notif_seen_at INTEGER;`);
+    }
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS post_shares (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares (post_id);
+    `);
+    // Migración muro de grupo en SQLite (2026-11-20).
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS group_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        photo_id INTEGER REFERENCES photos(id) ON DELETE SET NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_posts_group ON group_posts (group_id, created_at DESC);
+    `);
+    // Migración nombre real + verificación del correo en SQLite
+    // (2026-11-20): las mismas que en Postgres.
+    const userCols4 = sqlite.prepare(`PRAGMA table_info(users)`).all();
+    if (!userCols4.some((c) => c.name === 'real_name')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN real_name TEXT NOT NULL DEFAULT '';`);
+    }
+    if (!userCols4.some((c) => c.name === 'email_verified')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0;`);
+    }
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_email_codes_user ON email_verification_codes (user_id, created_at DESC);
+    `);
     console.log('[db] SQLite local (data/robin-dark.db)');
   }
 }
