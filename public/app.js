@@ -1295,7 +1295,7 @@ async function renderPerfil() {
       ${p.bio ? `<p style="margin:12px 0 0">${linkify(p.bio)}</p>` : ''}
       <div class="profile-actions">
         ${isOwn ? `<button type="button" class="cta" id="profile-edit">Editar perfil</button><button type="button" class="ghost-btn" id="profile-logout">Cerrar sesión</button>`
-          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>${me && me.is_admin ? `${p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">✓ Dar verificado</button>`}${p.disabled ? `<button type="button" class="cta" id="profile-disable">Habilitar cuenta</button>` : `<button type="button" class="danger-btn" id="profile-disable">🚫 Inhabilitar cuenta</button>`}` : ''}`}
+          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>${me && me.is_admin ? `${p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">✓ Dar verificado</button>`}${p.disabled ? `<button type="button" class="cta" id="profile-disable">Habilitar cuenta</button>` : `<button type="button" class="danger-btn" id="profile-disable">🚫 Inhabilitar cuenta</button>`}` : ''}${me && me.is_owner ? `${p.is_admin ? `<button type="button" class="danger-btn" id="profile-admin">Quitar admin</button>` : `<button type="button" class="cta" id="profile-admin">⭐ Hacer admin</button>`}` : ''}`}
       </div>
       ${p.is_friend ? `<p class="muted small">👥 Son amigos (se siguen mutuamente) · ${p.mutual_follows || 0} amigos en común</p>` : ''}
       <div class="tabs">
@@ -1344,6 +1344,18 @@ async function renderPerfil() {
     const rr = await api(`/api/users/${encodeURIComponent(p.alias)}/disable`, { method: 'POST', body: JSON.stringify({ disabled: disabling }) });
     if (rr.status === 200) { notice(disabling ? `La cuenta de @${p.alias} quedó inhabilitada permanentemente.` : `La cuenta de @${p.alias} quedó habilitada de nuevo.`); renderPerfil(); }
     else notice(rr.data.error || 'No se pudo cambiar la cuenta.');
+  });
+  // Botón del dueño para dar o quitar el admin a quien él quiera:
+  // solo el dueño lo ve (me.is_owner), no los admins concedidos.
+  // Se pide confirmación porque el admin puede verificar cuentas
+  // e inhabilitar a quienes no cumplan las normas.
+  const adminBtn = $('#profile-admin');
+  if (adminBtn) adminBtn.addEventListener('click', async () => {
+    const give = !p.is_admin;
+    if (!window.confirm(give ? `¿Hacer admin a @${p.alias}? Podrá verificar cuentas e inhabilitar a quienes no cumplan las normas.` : `¿Quitar el admin a @${p.alias}? Dejará de poder verificar e inhabilitar cuentas.`)) return;
+    const rr = await api(`/api/users/${encodeURIComponent(p.alias)}/admin`, { method: 'POST', body: JSON.stringify({ admin: give }) });
+    if (rr.status === 200) { notice(give ? `@${p.alias} ahora es admin.` : `Se quitó el admin a @${p.alias}.`); renderPerfil(); }
+    else notice(rr.data.error || 'No se pudo cambiar el admin.');
   });
   await renderPerfilTab();
 }
@@ -1397,7 +1409,9 @@ async function renderPerfilTab() {
 }
 
 function verificationSection(p, isOwn) {
-  if (isOwn && p.is_admin) {
+  // El panel de solicitudes es solo del dueño (me.is_owner): un
+  // admin concedido no es el dueño y no ve ni resuelve solicitudes.
+  if (isOwn && me && me.is_owner) {
     return `<h3>✓ Verificado (Admin)</h3><p class="muted">Eres el dueño de Robin Dark: tu perfil lleva la insignia especial «Admin» y el ✓ Verificado.</p><div id="owner-verif-list"><p class="muted">Cargando solicitudes…</p></div>`;
   }
   if (isOwn) {
@@ -1442,7 +1456,7 @@ async function bindEmailSection() {
 }
 
 async function bindVerificationSection(p, isOwn) {
-  if (isOwn && p.is_admin) {
+  if (isOwn && me && me.is_owner) {
     const box = $('#owner-verif-list');
     if (!box) return;
     const r = await api('/api/users/me/verification-requests?status=pending');
