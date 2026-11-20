@@ -24,8 +24,9 @@
 //   su hashtag en tendencias) ni por enlace directo, su historia
 //   no sale en las historias, su reacción no sale en la lista de
 //   reacciones y no sale en las sugerencias de Tendencias
-//   («Personas que podrías conocer», que solo muestran verificados
-//   con los fundadores/admins primero). El dueño sí sigue viendo
+//   («Personas que podrías conocer», donde sale todo el mundo
+//   menos inhabilitados, con los fundadores/admins primero, luego
+//   los verificados y luego los demás). El dueño sí sigue viendo
 //   su perfil (con disabled: true), su publicación por enlace y
 //   sus listas, y la ve en las búsquedas (con disabled: true).
 // - al habilitarla de nuevo, vuelve a verse y a poder entrar.
@@ -244,6 +245,11 @@ async function main() {
     check('la víctima no sale en las sugerencias de Tendencias', trends.status === 200 && !(trends.data.suggested_users || []).some((u) => u.alias === 'vic'), `status=${trends.status}`);
     check('su hashtag no sale en las tendencias (endpoint trends)', trends.status === 200 && !(trends.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${trends.status}`);
     check('la fundadora ana sí sale en las sugerencias', trends.status === 200 && (trends.data.suggested_users || []).some((u) => u.alias === 'ana'), `status=${trends.status}`);
+    // En las sugerencias sale todo el mundo (menos inhabilitados):
+    // mir no está verificado y también aparece, después de ana.
+    const sugDis = (trends.data.suggested_users || []).map((u) => u.alias);
+    check('un usuario sin verificar también sale en las sugerencias', sugDis.includes('mir'), `sugerencias=${sugDis.join(',')}`);
+    check('la fundadora ana sale primero (antes que mir)', sugDis[0] === 'ana', `sugerencias=${sugDis.join(',')}`);
     const singleViewer = await req('GET', `/api/social/posts/${postId}`, m.token);
     check('la publicación por enlace da 404 para un usuario normal', singleViewer.status === 404, `status=${singleViewer.status}`);
     const singleOwner = await req('GET', `/api/social/posts/${postId}`, o.token);
@@ -274,10 +280,10 @@ async function main() {
     const trendsAgain = await req('GET', '/api/social/trends', o.token);
     check('la víctima vuelve a las sugerencias de Tendencias', trendsAgain.status === 200 && (trendsAgain.data.suggested_users || []).some((u) => u.alias === 'vic'), `status=${trendsAgain.status}`);
     check('su hashtag vuelve a las tendencias (endpoint trends)', trendsAgain.status === 200 && (trendsAgain.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${trendsAgain.status}`);
-    // Fundadores primero: ana (admin) va antes que vic (verificado
-    // pero no admin) en las sugerencias.
+    // Orden: fundadores/admins primero, luego verificados, luego
+    // los demás (ana, vic, mir).
     const sug = (trendsAgain.data.suggested_users || []).map((u) => u.alias);
-    check('la fundadora ana sale primero en las sugerencias', sug[0] === 'ana' && sug.includes('vic'), `sugerencias=${sug.join(',')}`);
+    check('orden de sugerencias: fundadora, verificado, resto', sug[0] === 'ana' && sug[1] === 'vic' && sug[2] === 'mir', `sugerencias=${sug.join(',')}`);
     const loginAgain = await req('POST', '/api/auth/login', undefined, { email: victim.email, password: victim.password });
     check('la víctima puede entrar de nuevo (200)', loginAgain.status === 200, `status=${loginAgain.status}`);
 
