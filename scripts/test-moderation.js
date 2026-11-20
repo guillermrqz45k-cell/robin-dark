@@ -22,10 +22,12 @@
 //   publicaciones, seguidores y amigos también), no sale en las
 //   búsquedas, su publicación no sale en el feed, en Explorar (ni
 //   su hashtag en tendencias) ni por enlace directo, su historia
-//   no sale en las historias y su reacción no sale en la lista de
-//   reacciones. El dueño sí sigue viendo su perfil (con
-//   disabled: true), su publicación por enlace y sus listas, y la
-//   ve en las búsquedas (con disabled: true).
+//   no sale en las historias, su reacción no sale en la lista de
+//   reacciones y no sale en las sugerencias de Tendencias
+//   («Personas que podrías conocer», que solo muestran verificados
+//   con los fundadores/admins primero). El dueño sí sigue viendo
+//   su perfil (con disabled: true), su publicación por enlace y
+//   sus listas, y la ve en las búsquedas (con disabled: true).
 // - al habilitarla de nuevo, vuelve a verse y a poder entrar.
 // - los eventos user_disabled y user_enabled quedan registrados.
 const fs = require('fs');
@@ -161,6 +163,18 @@ async function main() {
     // limpia el dueño se lo da a sí mismo).
     const grant = await req('POST', '/api/users/jefe/admin', o.token, { admin: true });
     check('el dueño se hace admin con el nuevo endpoint', grant.status === 200 && grant.data.admin === true, JSON.stringify(grant.data));
+    // La víctima es verificada (para que salga en las sugerencias
+    // cuando está habilitada: las sugerencias solo muestran
+    // verificados, con los fundadores/admins primero).
+    const verifyVic = await req('POST', '/api/users/vic/verify', o.token, { verified: true });
+    check('el dueño verifica a la víctima (200)', verifyVic.status === 200 && verifyVic.data.verified === true, `status=${verifyVic.status} ${JSON.stringify(verifyVic.data)}`);
+    // Una segunda admin (fundadora) para probar que los fundadores
+    // salen primero en las sugerencias.
+    const admin2 = { real_name: 'Ana Fundadora', alias: 'ana', password: 'clave123', email: 'ana@prueba.com' };
+    const a = await registerAndLogin(admin2);
+    check('segunda admin registrada y con sesión', Boolean(a.token));
+    const grantAna = await req('POST', '/api/users/ana/admin', o.token, { admin: true });
+    check('el dueño hace admin a ana (fundadora)', grantAna.status === 200 && grantAna.data.admin === true, JSON.stringify(grantAna.data));
     check('víctima registrada y con sesión', Boolean(v.token));
     check('espectador registrado y con sesión', Boolean(m.token));
 
@@ -223,6 +237,13 @@ async function main() {
     const explore = await req('GET', '/api/social/explore', m.token);
     check('la publicación de la víctima no sale en Explorar', explore.status === 200 && !(explore.data.posts || []).some((p) => p.id === postId), `status=${explore.status}`);
     check('su hashtag no sale en las tendencias de Explorar', explore.status === 200 && !(explore.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${explore.status}`);
+    // Las sugerencias («Personas que podrías conocer») solo
+    // muestran verificados: el dueño no sigue a la víctima, así
+    // que saldría ahí si no estuviera inhabilitada.
+    const trends = await req('GET', '/api/social/trends', o.token);
+    check('la víctima no sale en las sugerencias de Tendencias', trends.status === 200 && !(trends.data.suggested_users || []).some((u) => u.alias === 'vic'), `status=${trends.status}`);
+    check('su hashtag no sale en las tendencias (endpoint trends)', trends.status === 200 && !(trends.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${trends.status}`);
+    check('la fundadora ana sí sale en las sugerencias', trends.status === 200 && (trends.data.suggested_users || []).some((u) => u.alias === 'ana'), `status=${trends.status}`);
     const singleViewer = await req('GET', `/api/social/posts/${postId}`, m.token);
     check('la publicación por enlace da 404 para un usuario normal', singleViewer.status === 404, `status=${singleViewer.status}`);
     const singleOwner = await req('GET', `/api/social/posts/${postId}`, o.token);
@@ -250,6 +271,13 @@ async function main() {
     const exploreAgain = await req('GET', '/api/social/explore', m.token);
     check('la publicación vuelve a salir en Explorar', exploreAgain.status === 200 && (exploreAgain.data.posts || []).some((p) => p.id === postId), `status=${exploreAgain.status}`);
     check('su hashtag vuelve a las tendencias de Explorar', exploreAgain.status === 200 && (exploreAgain.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${exploreAgain.status}`);
+    const trendsAgain = await req('GET', '/api/social/trends', o.token);
+    check('la víctima vuelve a las sugerencias de Tendencias', trendsAgain.status === 200 && (trendsAgain.data.suggested_users || []).some((u) => u.alias === 'vic'), `status=${trendsAgain.status}`);
+    check('su hashtag vuelve a las tendencias (endpoint trends)', trendsAgain.status === 200 && (trendsAgain.data.hashtags || []).some((h) => h.tag === 'victimaescondida'), `status=${trendsAgain.status}`);
+    // Fundadores primero: ana (admin) va antes que vic (verificado
+    // pero no admin) en las sugerencias.
+    const sug = (trendsAgain.data.suggested_users || []).map((u) => u.alias);
+    check('la fundadora ana sale primero en las sugerencias', sug[0] === 'ana' && sug.includes('vic'), `sugerencias=${sug.join(',')}`);
     const loginAgain = await req('POST', '/api/auth/login', undefined, { email: victim.email, password: victim.password });
     check('la víctima puede entrar de nuevo (200)', loginAgain.status === 200, `status=${loginAgain.status}`);
 
