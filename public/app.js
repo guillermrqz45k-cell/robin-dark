@@ -1680,6 +1680,112 @@ function openAuthModal(mode) {
   render();
 }
 
+// ---------- Cookies: consentimiento ----------
+// El consentimiento de cookies es de verdad: se guarda en una
+// cookie REAL (rd_cookie_consent) y, como respaldo, en
+// localStorage con el mismo nombre. La sesión (rd_token, rd_user)
+// sigue en localStorage, no en cookies. Sin onclick ni style en
+// línea: todo se conecta con addEventListener y clases CSS.
+const COOKIE_CONSENT_NAME = 'rd_cookie_consent';
+const COOKIE_CONSENT_DAYS = 365;
+
+function readCookie(name) {
+  const prefix = `${name}=`;
+  const parts = String(document.cookie || '').split(';');
+  for (const part of parts) {
+    const c = part.trim();
+    if (c.startsWith(prefix)) return decodeURIComponent(c.slice(prefix.length));
+  }
+  return null;
+}
+
+function getCookieConsent() {
+  // Primero la cookie real; si no está (el navegador la borró),
+  // el respaldo de localStorage.
+  try {
+    const fromCookie = readCookie(COOKIE_CONSENT_NAME);
+    if (fromCookie) return JSON.parse(fromCookie);
+  } catch (e) { /* valor corrupto: se ignora */ }
+  try {
+    const fromStorage = localStorage.getItem(COOKIE_CONSENT_NAME);
+    if (fromStorage) return JSON.parse(fromStorage);
+  } catch (e) { /* valor corrupto: se ignora */ }
+  return null;
+}
+
+function saveCookieConsent(prefs) {
+  const value = {
+    necesarias: true,
+    preferencias: Boolean(prefs.preferencias),
+    estadisticas: Boolean(prefs.estadisticas),
+    marketing: Boolean(prefs.marketing),
+    ts: Date.now(),
+  };
+  const encoded = encodeURIComponent(JSON.stringify(value));
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${COOKIE_CONSENT_NAME}=${encoded}; max-age=${COOKIE_CONSENT_DAYS * 24 * 60 * 60}; path=/; SameSite=Lax${secure}`;
+  try { localStorage.setItem(COOKIE_CONSENT_NAME, JSON.stringify(value)); } catch (e) { /* sin almacenamiento: la cookie basta */ }
+  return value;
+}
+
+function hideCookieBanner() {
+  const banner = $('#cookie-banner');
+  if (banner) banner.remove();
+}
+
+function openCookieSettings() {
+  const current = getCookieConsent() || {};
+  showModal(`<div class="modal-head"><h2>Configuración de cookies</h2><button type="button" class="close-btn">✕</button></div>
+    <p class="muted small">Elige qué cookies aceptas. Las necesarias siempre están activas porque sin ellas el sitio no funciona. Más detalle en la <a href="/legal/cookies.html">Política de cookies</a>.</p>
+    <label class="cookie-toggle"><span><strong>Necesarias</strong><br><span class="muted small">Imprescindibles para que el sitio funcione.</span></span><input type="checkbox" checked disabled></label>
+    <label class="cookie-toggle"><span><strong>Preferencias</strong><br><span class="muted small">Recuerdan tus ajustes dentro del sitio.</span></span><input type="checkbox" id="cookie-pref"${current.preferencias ? ' checked' : ''}></label>
+    <label class="cookie-toggle"><span><strong>Estadísticas</strong><br><span class="muted small">Nos ayudarían a saber qué partes del sitio se usan más.</span></span><input type="checkbox" id="cookie-stats"${current.estadisticas ? ' checked' : ''}></label>
+    <label class="cookie-toggle"><span><strong>Marketing</strong><br><span class="muted small">Se usarían para anuncios. Hoy no hay publicidad en Robin Dark.</span></span><input type="checkbox" id="cookie-marketing"${current.marketing ? ' checked' : ''}></label>
+    <button type="button" class="cta cookie-save-btn" id="cookie-save">Guardar preferencias</button>`);
+  $('#cookie-save').addEventListener('click', () => {
+    saveCookieConsent({
+      preferencias: $('#cookie-pref').checked,
+      estadisticas: $('#cookie-stats').checked,
+      marketing: $('#cookie-marketing').checked,
+    });
+    closeModal();
+    hideCookieBanner();
+    notice('Preferencias de cookies guardadas.');
+  });
+}
+
+function showCookieBanner() {
+  if ($('#cookie-banner') || getCookieConsent()) return;
+  const banner = document.createElement('div');
+  banner.id = 'cookie-banner';
+  banner.className = 'cookie-banner';
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-label', 'Aviso de cookies');
+  banner.innerHTML = `<p>Usamos cookies para que Robin Dark funcione y para recordar tus preferencias. Puedes aceptarlas todas, rechazarlas o configurarlas. Más detalle en la <a href="/legal/cookies.html">Política de cookies</a>.</p>
+    <div class="cookie-banner-btns">
+      <button type="button" class="cta cookie-accept">Aceptar todo</button>
+      <button type="button" class="ghost-btn cookie-reject">Rechazar</button>
+      <button type="button" class="ghost-btn cookie-settings">Configurar</button>
+    </div>`;
+  banner.querySelector('.cookie-accept').addEventListener('click', () => {
+    saveCookieConsent({ preferencias: true, estadisticas: true, marketing: true });
+    hideCookieBanner();
+  });
+  banner.querySelector('.cookie-reject').addEventListener('click', () => {
+    saveCookieConsent({ preferencias: false, estadisticas: false, marketing: false });
+    hideCookieBanner();
+  });
+  banner.querySelector('.cookie-settings').addEventListener('click', openCookieSettings);
+  document.body.appendChild(banner);
+}
+
+function initCookieConsent() {
+  // El botón del pie reabre el panel de configuración.
+  const settingsBtn = $('#footer-cookie-settings');
+  if (settingsBtn) settingsBtn.addEventListener('click', openCookieSettings);
+  showCookieBanner();
+}
+
 // ---------- Inicio de la app ----------
 
 (async function init() {
@@ -1691,4 +1797,5 @@ function openAuthModal(mode) {
   if (token) { await loadMe(); startPolling(); refreshBadges(); }
   showView('inicio');
   openDeepLink();
+  initCookieConsent();
 })();

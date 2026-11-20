@@ -383,3 +383,64 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 @media (min-width: 861px) {
   .brand-tag { display: inline; }
 }
+
+/* ---------- Pie del sitio ---------- */
+.site-footer {
+  max-width: 1100px;
+  margin: 24px auto 0;
+  padding: 20px 16px 28px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.site-footer-links {
+  display: flex; flex-wrap: wrap; gap: 6px 18px;
+  justify-content: center; align-items: center;
+  margin-bottom: 10px;
+}
+.site-footer-links a { font-size: 14px; }
+.site-footer p { margin: 0; }
+
+/* ---------- Banner y panel de cookies ---------- */
+.cookie-banner {
+  position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 90;
+  max-width: 720px; margin: 0 auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+.cookie-banner p { margin: 0 0 12px; font-size: 14px; }
+.cookie-banner-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.cookie-toggle {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.cookie-toggle input[type="checkbox"] { width: auto; flex-shrink: 0; accent-color: var(--accent); }
+.cookie-save-btn { width: 100%; margin-top: 14px; }
+
+/* ---------- Páginas legales ---------- */
+.legal-head {
+  max-width: 760px; margin: 0 auto; padding: 16px;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.legal-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.legal-page {
+  max-width: 760px; margin: 0 auto; padding: 8px 16px 32px;
+}
+.legal-page h1 { font-size: 26px; margin: 12px 0 4px; }
+.legal-page h2 { font-size: 19px; margin: 26px 0 8px; }
+.legal-page p, .legal-page li { font-size: 15px; line-height: 1.65; }
+.legal-page ul { padding-left: 22px; }
+.legal-page code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+.legal-nav {
+  margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px;
+}
+.legal-foot { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; text-align: center; }
+.legal-foot p { margin: 0; }
+
+@media (max-width: 860px) {
+  /* El bottomnav fijo no debe tapar el pie ni el banner de cookies:
+     en el teléfono ambos llevan su propio espacio inferior. */
+  .site-footer { padding-bottom: 100px; }
+  .cookie-banner { bottom: 76px; }
+}
