@@ -3,156 +3,96 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Robin Dark — Aquí puedes vender de todo</title>
+<title>Robin Dark — Tu mundo, tu gente, tu red</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="rd-scene">
 <header class="topbar">
-  <div class="brand"><span class="logo">◆</span> Robin Dark</div>
-  <nav>
-    <button data-view="shop" class="nav-btn active">Tienda</button>
-    <button data-view="publicaciones" class="nav-btn">Publicaciones</button>
-    <button data-view="sell" class="nav-btn">Vender</button>
-    <button data-view="account" class="nav-btn">Mi cuenta</button>
-    <button data-view="chat" class="nav-btn">Mensajes <span id="chat-badge" class="badge" hidden></span></button>
-    <button data-view="admin" class="nav-btn">Admin</button>
+  <div class="brand" id="brand-home" role="button" tabindex="0" aria-label="Robin Dark: ir al inicio">
+    <span class="ghost-badge" aria-hidden="true">
+      <svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
+    </span>
+    <span class="brand-name">Robin <span class="brand-dark">Dark</span></span>
+    <span class="brand-tag">Conecta · Comparte · Sé Tú</span>
+  </div>
+  <div class="top-search">
+    <input id="top-search-input" type="search" placeholder="Buscar personas, páginas, grupos o contenido…" aria-label="Buscar en Robin Dark" autocomplete="off">
+    <div id="top-search-results" class="search-results" hidden></div>
+  </div>
+  <nav class="top-icons" aria-label="Accesos rápidos">
+    <button id="top-home" class="icon-btn" aria-label="Inicio" title="Inicio">⌂</button>
+    <button id="top-friends" class="icon-btn" aria-label="Amigos" title="Amigos">👥</button>
+    <button id="top-messages" class="icon-btn" aria-label="Mensajes" title="Mensajes">✉️<span id="chat-badge" class="badge" hidden></span></button>
+    <button id="top-bell" class="icon-btn" aria-label="Notificaciones" title="Notificaciones">🔔<span id="notif-badge" class="badge" hidden></span></button>
+    <button id="top-avatar" class="icon-btn avatar-btn" aria-label="Mi perfil" title="Mi perfil"><span id="top-avatar-img">👤</span></button>
   </nav>
-  <div id="auth-area" class="auth-area"></div>
+  <div id="notif-panel" class="notif-panel" hidden>
+    <div class="notif-head"><strong>Notificaciones</strong><button id="notif-close" class="link-btn" aria-label="Cerrar notificaciones">✕</button></div>
+    <div id="notif-list" class="notif-list"><p class="muted">Cargando notificaciones…</p></div>
+    <button id="notif-all" class="notif-all">Ver todas</button>
+  </div>
 </header>
 
-<main>
-  <!-- Tienda -->
-  <section id="view-shop" class="view">
-    <div class="hero">
-      <h1>Robin Dark <span>— Aquí puedes vender de todo</span></h1>
-      <p class="welcome">Bienvenido a Robin Dark, el mercado abierto donde cualquiera puede publicar y negociar. Entra solo con un alias, sin correo, sin teléfono y sin ubicación. Los pagos son solo en BTC y todo queda guardado: cuentas, anuncios, pedidos y mensajes. Para comprar, contacta al vendedor en el chat y negocien el trato ahí: el chat no vende solo, y el pago queda en custodia hasta que el comprador confirme que recibió el producto.</p>
-      <div class="stats" id="stats" aria-label="Estadísticas del mercado">
-        <div class="stat"><strong id="stat-users">0</strong><span>usuarios registrados</span></div>
-        <div class="stat"><strong id="stat-listings">0</strong><span>anuncios publicados</span></div>
-        <div class="stat"><strong id="stat-deals">0</strong><span>tratos cerrados</span></div>
-        <div class="stat"><strong id="stat-messages">0</strong><span>mensajes enviados</span></div>
-      </div>
-      <div class="search-box">
-        <input id="search-input" type="search" placeholder="Busca lo que sea…" aria-label="Buscar en la tienda">
-        <button id="search-btn" class="cta">Buscar</button>
-      </div>
-      <p class="hint">La búsqueda es la forma de encontrar artículos. No hay categorías.</p>
-      <p id="shop-msg" class="msg" role="status"></p>
+<div class="layout">
+  <aside class="sidebar" aria-label="Menú principal">
+    <nav id="pc-menu" class="pc-menu"></nav>
+    <div class="side-block">
+      <h3>Tus accesos directos</h3>
+      <div id="my-groups-shortcuts"><p class="muted small">Entra para ver tus grupos.</p></div>
     </div>
-    <div class="ticker"><span>Pagos solo en BTC ₿ &nbsp;·&nbsp; Registro anónimo &nbsp;·&nbsp; Todo queda guardado &nbsp;·&nbsp; Chat privado entre comprador y vendedor &nbsp;·&nbsp;</span><span>Pagos solo en BTC ₿ &nbsp;·&nbsp; Registro anónimo &nbsp;·&nbsp; Todo queda guardado &nbsp;·&nbsp; Chat privado entre comprador y vendedor &nbsp;·&nbsp;</span></div>
-    <div id="listings" class="grid"></div>
-    <p id="empty-shop" class="empty" hidden>Todavía no hay anuncios. Sé la primera persona en publicar algo.</p>
-  </section>
-
-  <!-- Publicaciones: todas las de todos los usuarios -->
-  <section id="view-publicaciones" class="view" hidden>
-    <div class="hero">
-      <h1>Publicaciones <span>— de todos los usuarios</span></h1>
-      <p class="welcome">Todas las publicaciones del mercado, disponibles y agotadas. La Tienda es el escaparate con buscador; aquí se ve todo lo que se ha publicado.</p>
-      <div class="stats" aria-label="Contadores de publicaciones">
-        <div class="stat"><strong id="pub-total">0</strong><span>publicaciones en total</span></div>
-        <div class="stat"><strong id="pub-disponibles">0</strong><span>disponibles</span></div>
-        <div class="stat"><strong id="pub-agotadas">0</strong><span>agotadas</span></div>
-        <div class="stat"><strong id="pub-vendedores">0</strong><span>vendedores publicando</span></div>
-      </div>
-      <div class="row pub-filters" role="group" aria-label="Filtrar publicaciones por estado">
-        <button class="nav-btn pub-filter active" data-filter="todas">Todas</button>
-        <button class="nav-btn pub-filter" data-filter="disponible">Disponibles</button>
-        <button class="nav-btn pub-filter" data-filter="agotadas">Agotadas</button>
-      </div>
-      <p id="pub-msg" class="msg" role="status"></p>
+    <div class="premium-card">
+      <p class="premium-title">👑 Robin Dark Premium</p>
+      <p class="muted small">Más beneficios, más conexión.</p>
+      <button id="premium-btn" class="cta">Ver planes</button>
     </div>
-    <div id="publicaciones-listings" class="grid"></div>
-    <p id="empty-publicaciones" class="empty" hidden>Todavía no hay publicaciones.</p>
-  </section>
+  </aside>
 
-  <!-- Vender -->
-  <section id="view-sell" class="view" hidden>
-    <h2>Publica tu anuncio</h2>
-    <p class="muted">Se publica a la vista de todos en la tienda. El precio es solo en BTC.</p>
-    <form id="sell-form" class="card form">
-      <label>Título <input name="title" required maxlength="120" placeholder="¿Qué vendes?"></label>
-      <label>Descripción <textarea name="description" rows="4" maxlength="2000" placeholder="Cuéntalo bien: detalles, lo que incluye…"></textarea></label>
-      <label>Precio en BTC <input name="price_btc" type="number" step="0.00000001" min="0.00000001" required placeholder="0.015"></label>
-      <label>Cantidad en stock <input name="stock" type="number" step="1" min="1" max="10000" value="1" required></label>
-      <p class="muted small">¿Cuántas unidades tienes de este artículo? Cada venta descuenta 1. El anuncio sigue en la tienda hasta que se agote el stock o tú lo des por agotado.</p>
-      <button type="submit">Publicar anuncio</button>
-      <p id="sell-msg" class="msg"></p>
-    </form>
-  </section>
+  <main id="main">
+    <p id="auth-notice" class="auth-notice" hidden>Entra con tu cuenta para publicar, seguir y escribir mensajes. El registro es con tu nombre real, tu correo y una contraseña: te llega un código de verificación a tu correo. Entras con tu correo y tu contraseña.</p>
+    <p id="notice" class="notice" role="status" hidden></p>
 
-  <!-- Mi cuenta -->
-  <section id="view-account" class="view" hidden>
-    <h2>Mi cuenta</h2>
-    <div id="account-content"><p class="muted">Entra con tu alias para ver tus anuncios, compras y ventas.</p></div>
-  </section>
+    <section id="view-inicio" class="view"></section>
+    <section id="view-explorar" class="view" hidden></section>
+    <section id="view-grupos" class="view" hidden></section>
+    <section id="view-mensajes" class="view" hidden></section>
+    <section id="view-perfil" class="view" hidden></section>
+    <section id="view-amigos" class="view" hidden></section>
+    <section id="view-reels" class="view" hidden></section>
+    <section id="view-ia" class="view" hidden></section>
+    <section id="view-notificaciones" class="view" hidden></section>
+  </main>
 
-  <!-- Chat -->
-  <section id="view-chat" class="view" hidden>
-    <h2>Mensajes</h2>
-    <div class="chat-layout">
-      <div id="conv-list" class="conv-list"></div>
-      <div class="chat-panel">
-        <div id="chat-peer" class="chat-peer" hidden></div>
-        <p id="chat-error" class="msg error" hidden></p>
-        <div id="chat-escrow" class="msg" hidden></div>
-        <div id="chat-actions" class="row" hidden>
-          <button id="mark-sold-chat-btn" class="cta" hidden>Marcar como vendido</button>
-          <button id="confirm-chat-btn" class="cta" hidden>Confirmar que recibí el producto</button>
-        </div>
-        <div id="chat-messages" class="chat-messages"><p class="muted">Elige una conversación para hablar con el vendedor o el comprador.</p></div>
-        <form id="chat-form" class="chat-form" hidden>
-          <input id="chat-input" maxlength="2000" placeholder="Pregunta por el producto, el precio, el envío…" autocomplete="off">
-          <button type="submit">Enviar</button>
-        </form>
-      </div>
+  <aside class="rightbar" aria-label="Sugerencias y tendencias">
+    <div class="side-block">
+      <div class="side-head"><h3>Personas que podrías conocer</h3><button class="link-btn" id="sugg-all">Ver todas</button></div>
+      <div id="suggested-users"><p class="muted small">Cargando…</p></div>
     </div>
-  </section>
-
-  <!-- Panel de administrador -->
-  <section id="view-admin" class="view" hidden>
-    <h2>Panel de administrador</h2>
-    <p class="muted">Solo el dueño del sitio entra aquí, con su alias y contraseña de administrador (variables ADMIN_ALIAS y ADMIN_PASSWORD). Los usuarios normales no pueden ver estos datos.</p>
-    <div id="admin-content"><p class="muted">Cargando el panel…</p></div>
-  </section>
-
-  <!-- Acceso anónimo -->
-  <section id="view-auth" class="view" hidden>
-    <h2>Entra con tu alias</h2>
-    <p class="muted">Solo alias y contraseña. Sin correo, sin teléfono, sin ubicación.</p>
-    <p id="auth-notice" class="msg" role="status"></p>
-    <div class="auth-grid">
-      <form id="register-form" class="card form">
-        <h3>Crear cuenta</h3>
-        <label>Alias <input name="alias" required minlength="3" maxlength="30" placeholder="tu_alias"></label>
-        <label>Contraseña <input name="password" type="password" required minlength="6" placeholder="Mínimo 6 caracteres"></label>
-        <button type="submit">Crear cuenta anónima</button>
-        <p class="msg" data-msg></p>
-      </form>
-      <form id="login-form" class="card form">
-        <h3>Iniciar sesión</h3>
-        <label>Alias <input name="alias" required placeholder="tu_alias"></label>
-        <label>Contraseña <input name="password" type="password" required></label>
-        <button type="submit">Entrar</button>
-        <p class="msg" data-msg></p>
-      </form>
+    <div class="side-block">
+      <div class="side-head"><h3>Grupos sugeridos</h3><button class="link-btn" id="groups-all">Ver todos</button></div>
+      <div id="suggested-groups"><p class="muted small">Cargando…</p></div>
     </div>
-  </section>
-</main>
-
-<footer>
-  <p><strong>Robin Dark</strong> — Aquí puedes vender de todo.</p>
-  <p>Pagos solo en BTC. Cuentas, anuncios, pedidos y mensajes quedan guardados en la base de datos.</p>
-  <p>¿Tienes un producto para vender? Publícalo aquí.</p>
-</footer>
-
-<div id="modal" class="modal" hidden>
-  <div class="modal-card">
-    <button id="modal-close" class="modal-close" aria-label="Cerrar">✕</button>
-    <div id="modal-body"></div>
-  </div>
+    <div class="side-block">
+      <div class="side-head"><h3>🔥 Tendencias</h3><button class="link-btn" id="trends-all">Ver todas</button></div>
+      <div id="trending-tags"><p class="muted small">Cargando…</p></div>
+    </div>
+    <div class="side-block">
+      <div class="side-head"><h3>Robin Dark en números</h3></div>
+      <div id="stats-strip" class="stats-strip"><p class="muted small">Cargando…</p></div>
+    </div>
+  </aside>
 </div>
 
+<nav class="bottomnav" aria-label="Navegación principal en el teléfono">
+  <button data-view="inicio" class="bottom-btn" aria-label="Inicio"><span class="b-ico">⌂</span><span>Inicio</span></button>
+  <button data-view="explorar" class="bottom-btn" aria-label="Explorar"><span class="b-ico">🧭</span><span>Explorar</span></button>
+  <button id="bottom-create" class="bottom-btn bottom-plus" aria-label="Crear publicación u historia"><span class="b-plus">+</span></button>
+  <button data-view="mensajes" class="bottom-btn" aria-label="Mensajes"><span class="b-ico">✉️</span><span>Mensajes</span><span id="chat-badge-mobile" class="badge" hidden></span></button>
+  <button data-view="perfil" class="bottom-btn" aria-label="Perfil"><span class="b-ico">👤</span><span>Perfil</span></button>
+</nav>
+
+<div id="modal" class="modal" hidden><div id="modal-card" class="modal-card"></div></div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>
