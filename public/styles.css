@@ -47,6 +47,11 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .msg.error { color: var(--danger); }
 .msg.ok { color: #4ade80; }
 .hidden { display: none !important; }
+/* El atributo hidden debe ganar a cualquier display (p. ej. .modal
+   usa display:flex y .badge display:inline-flex): sin esta regla el
+   navegador muestra el elemento aunque tenga hidden, y el modal
+   quedaba siempre visible tapando toda la página sin dejar hacer nada. */
+[hidden] { display: none !important; }
 
 /* ---------- Barra superior ---------- */
 .topbar {
