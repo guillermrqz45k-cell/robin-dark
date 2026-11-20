@@ -91,6 +91,12 @@ function showModal(html, wide) {
   const card = $('#modal-card');
   card.className = 'modal-card' + (wide ? ' wide' : '');
   card.innerHTML = html;
+  // La CSP del servidor bloquea los onclick y los style en línea,
+  // así que la X de cada cuadro se conecta aquí (igual que Escape
+  // y el toque fuera del cuadro). Lo mismo para el input de
+  // "Copiar enlace", que se selecciona al tocarlo.
+  card.querySelectorAll('.close-btn').forEach((b) => b.addEventListener('click', closeModal));
+  card.querySelectorAll('input[readonly]').forEach((i) => i.addEventListener('click', () => i.select()));
   m.hidden = false;
 }
 function closeModal() { $('#modal').hidden = true; }
@@ -645,7 +651,7 @@ async function shareToGroup(postId) {
   const g = await api('/api/social/groups?mine=1');
   const groups = g.status === 200 ? (g.data.groups || []).filter((x) => x.is_member) : [];
   if (!groups.length) { notice('Primero únete a un grupo para compartir ahí.'); showView('grupos'); return; }
-  showModal(`<div class="modal-head"><h2>Compartir en un grupo</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+  showModal(`<div class="modal-head"><h2>Compartir en un grupo</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Elige el grupo donde se publicará:</p>
     ${groups.map((x) => `<button type="button" class="thread-row" data-share-group="${x.id}"><span class="group-ico">👥</span><span><strong>${esc(x.name)}</strong><br><span class="muted small">${x.member_count} miembros</span></span></button>`).join('')}`);
   $$('#modal [data-share-group]').forEach((b) => b.addEventListener('click', async () => {
@@ -670,7 +676,7 @@ async function shareToFriend(postId) {
   const friends = f.status === 200 ? (f.data.following || []) : [];
   if (!friends.length) { notice('Primero sigue a alguien para enviarle la publicación.'); showView('explorar'); return; }
   const link = `${location.origin}/#post-${postId}`;
-  showModal(`<div class="modal-head"><h2>Enviar a un amigo</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+  showModal(`<div class="modal-head"><h2>Enviar a un amigo</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Elige a quién le llega por mensaje:</p>
     ${friends.map((u) => `<button type="button" class="thread-row" data-share-friend="${u.id}" data-alias="${esc(u.alias)}">${avatarHtml(u, 'sm')}<span><strong>${esc(u.alias)}</strong> ${adminBadgeHtml(u.is_admin)}${verifiedHtml(u.verified)}</span></button>`).join('')}`);
   $$('#modal [data-share-friend]').forEach((b) => b.addEventListener('click', async () => {
@@ -690,7 +696,7 @@ async function copyPostLink(postId) {
     await navigator.clipboard.writeText(link);
     notice('Enlace copiado.');
   } catch (e) {
-    showModal(`<div class="modal-head"><h2>Copiar enlace</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div><p class="muted">Copia el enlace de la publicación:</p><input readonly value="${esc(link)}" onclick="this.select()">`);
+    showModal(`<div class="modal-head"><h2>Copiar enlace</h2><button type="button" class="close-btn">✕</button></div><p class="muted">Copia el enlace de la publicación:</p><input readonly value="${esc(link)}">`);
   }
 }
 
@@ -712,7 +718,7 @@ async function openDeepLink() {
   if (!m) return;
   const p = await getPost(Number(m[1]));
   if (!p) return;
-  showModal(`<div class="modal-head"><h2>Publicación</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div><div style="margin-top:12px">${postCard(p)}</div>`, true);
+  showModal(`<div class="modal-head"><h2>Publicación</h2><button type="button" class="close-btn">✕</button></div><div style="margin-top:12px">${postCard(p)}</div>`, true);
   bindPostCards($('#modal-card'));
 }
 
@@ -720,7 +726,7 @@ async function openDeepLink() {
 
 function openStoryModal() {
   let media = null;
-  showModal(`<div class="modal-head"><h2>Crear historia</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+  showModal(`<div class="modal-head"><h2>Crear historia</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Las historias duran 24 horas. Puedes poner texto, foto o vídeo corto.</p>
     <textarea id="story-text" rows="3" placeholder="¿Qué quieres contar?" maxlength="500"></textarea>
     <div class="composer-actions">
@@ -1021,7 +1027,7 @@ async function renderReels() {
 
 function openReelModal() {
   let media = null;
-  showModal(`<div class="modal-head"><h2>Crear reel</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+  showModal(`<div class="modal-head"><h2>Crear reel</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Un reel necesita foto o vídeo corto (MP4/WebM, hasta 20 MB). Se queda visible.</p>
     <textarea id="reel-text" rows="2" placeholder="¿De qué trata tu reel?" maxlength="500"></textarea>
     <div class="composer-actions">
@@ -1121,7 +1127,7 @@ function renderThreadList(threads) {
 }
 
 function openNewMessageModal() {
-  showModal(`<div class="modal-head"><h2>✉️ Nuevo mensaje</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+  showModal(`<div class="modal-head"><h2>✉️ Nuevo mensaje</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Busca a un miembro y empieza a hablarle:</p>
     <input id="newmsg-search" type="search" placeholder="Buscar por alias…" autocomplete="off">
     <div id="newmsg-results" style="margin-top:10px"><p class="muted">Escribe al menos 2 letras.</p></div>`);
@@ -1260,7 +1266,7 @@ async function renderPerfilTab() {
     $$('#profile-tab [data-photo-post]').forEach((b) => b.addEventListener('click', async () => {
       const post = await getPost(Number(b.dataset.photoPost));
       if (!post) return;
-      showModal(`<div class="modal-head"><h2>Foto de @${esc(p.alias)}</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div><div style="margin-top:12px">${postCard(post)}</div>`, true);
+      showModal(`<div class="modal-head"><h2>Foto de @${esc(p.alias)}</h2><button type="button" class="close-btn">✕</button></div><div style="margin-top:12px">${postCard(post)}</div>`, true);
       bindPostCards($('#modal-card'));
     }));
   } else if (profileTab === 'amigos') {
@@ -1389,7 +1395,7 @@ function openEditProfileModal() {
   if (!p) return;
   let avatar = null;
   let cover = null;
-  showModal(`<div class="modal-head"><h2>Editar perfil</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+  showModal(`<div class="modal-head"><h2>Editar perfil</h2><button type="button" class="close-btn">✕</button></div>
     <label class="muted small">Biografía (máx. 300 caracteres)</label>
     <textarea id="edit-bio" rows="3" maxlength="300">${esc(p.bio || '')}</textarea>
     <div class="composer-actions">
@@ -1492,7 +1498,7 @@ function openAuthModal(mode) {
   let verifyFromLogin = false;
   const render = () => {
     if (m === 'login') {
-      showModal(`<div style="display:flex;justify-content:flex-end"><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true" aria-label="Cerrar">✕</button></div><div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
+      showModal(`<div class="modal-close-row"><button type="button" class="close-btn" aria-label="Cerrar">✕</button></div><div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
       <p class="ghost-greeting">¡Buuu! ¡Hola!</p><p class="muted">Entra a Robin Dark con tu correo y tu contraseña.</p></div>
       <form id="auth-form"><label class="muted small">Correo</label><input id="auth-login" type="email" autocomplete="username" placeholder="correo@example.com"><label class="muted small">Contraseña</label><input id="auth-pass" type="password" autocomplete="current-password" placeholder="Contraseña"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Entrar</button></form>
       <p class="auth-switch"><button type="button" class="link-btn" id="auth-forgot">¿Olvidaste tu contraseña?</button></p>
@@ -1522,7 +1528,7 @@ function openAuthModal(mode) {
         } else $('#auth-error').textContent = r.data.error || 'No se pudo entrar.';
       });
     } else if (m === 'register') {
-      showModal(`<div style="display:flex;justify-content:flex-end"><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true" aria-label="Cerrar">✕</button></div><div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
+      showModal(`<div class="modal-close-row"><button type="button" class="close-btn" aria-label="Cerrar">✕</button></div><div class="ghost-hero"><span class="ghost-badge" aria-hidden="true"><svg viewBox="0 0 64 64" class="ghost-svg"><path d="M32 6c-11 0-19 8.6-19 20v22.5c0 2.8 3.6 4 5.2 1.8L22 45c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l2.4-3.2c1.2-1.6 3.4-1.6 4.6 0l2.4 3.2c1.2 1.6 3.4 1.6 4.6 0l3.8-5.3c1.6 2.2 5.2 1 5.2-1.8V26C51 14.6 43 6 32 6z"/><circle cx="24" cy="26" r="3.4" fill="#070716"/><circle cx="40" cy="26" r="3.4" fill="#070716"/><path d="M27 36c2 2.4 8 2.4 10 0" stroke="#070716" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg></span>
       <p class="ghost-greeting">¡Buuu! Crea tu cuenta</p><p class="muted">Con tu nombre real, tu correo y una contraseña. Te enviamos un código de verificación a tu correo.</p></div>
       <form id="auth-form"><label class="muted small">Nombre real</label><input id="auth-realname" autocomplete="name" placeholder="Tu nombre real" maxlength="100"><label class="muted small">Alias (@usuario)</label><input id="auth-alias" autocomplete="username" placeholder="alias" maxlength="30"><label class="muted small">Correo</label><input id="auth-email" type="email" autocomplete="email" placeholder="correo@example.com"><label class="muted small">Contraseña (6 o más caracteres)</label><input id="auth-pass" type="password" autocomplete="new-password" placeholder="Contraseña"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Crear cuenta nueva</button></form>
       <p class="auth-switch">¿Ya tienes cuenta? <button type="button" class="link-btn" id="auth-to-login">Entrar</button></p>`);
@@ -1549,7 +1555,7 @@ function openAuthModal(mode) {
         } else $('#auth-error').textContent = r.data.error || 'No se pudo crear la cuenta.';
       });
     } else if (m === 'verify') {
-      showModal(`<div class="modal-head"><h2>Verifica tu correo</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+      showModal(`<div class="modal-head"><h2>Verifica tu correo</h2><button type="button" class="close-btn">✕</button></div>
       <p class="muted">${verifyFromLogin ? 'Para poder entrar, primero confirma tu correo. ' : ''}Te enviamos un código de 6 dígitos a <strong>${esc(verifyEmail || '')}</strong> (caduca en 15 minutos). Ponlo aquí:</p>
       <form id="auth-form"><label class="muted small">Código de 6 dígitos</label><input id="verify-code" inputmode="numeric" maxlength="6" placeholder="123456"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Verificar correo</button></form>
       <p class="auth-switch"><button type="button" class="link-btn" id="verify-resend">Reenviar código</button> · <button type="button" class="link-btn" id="verify-later">Lo haré después</button></p>`);
@@ -1580,7 +1586,7 @@ function openAuthModal(mode) {
         } else $('#auth-error').textContent = r.data.error || 'No se pudo verificar el correo.';
       });
     } else {
-      showModal(`<div class="modal-head"><h2>¿Olvidaste tu contraseña?</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+      showModal(`<div class="modal-head"><h2>¿Olvidaste tu contraseña?</h2><button type="button" class="close-btn">✕</button></div>
       <p class="muted">Escribe tu correo y te llega un código de 6 dígitos (caduca en 15 minutos).</p>
       <form id="auth-form"><label class="muted small">Correo</label><input id="auth-email" type="email" placeholder="correo@example.com"><p class="muted small" id="auth-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Enviar código</button></form>
       <p class="auth-switch"><button type="button" class="link-btn" id="auth-to-login">Volver a Entrar</button></p>`);
@@ -1590,7 +1596,7 @@ function openAuthModal(mode) {
         const email = ($('#auth-email').value || '').trim();
         const r = await api('/api/auth/forgot', { method: 'POST', body: JSON.stringify({ email }) });
         if (r.status === 200) {
-          showModal(`<div class="modal-head"><h2>Código enviado</h2><button type="button" class="close-btn" onclick="document.querySelector('#modal').hidden=true">✕</button></div>
+          showModal(`<div class="modal-head"><h2>Código enviado</h2><button type="button" class="close-btn">✕</button></div>
           <p class="muted">Si ese correo existe en Robin Dark, ya te llegó un código de 6 dígitos. Ponlo aquí con tu contraseña nueva:</p>
           <form id="reset-form"><label class="muted small">Código de 6 dígitos</label><input id="reset-code" inputmode="numeric" maxlength="6" placeholder="123456"><label class="muted small">Contraseña nueva</label><input id="reset-pass" type="password" placeholder="Contraseña nueva"><p class="muted small" id="reset-error" style="color:var(--danger)"></p><button type="submit" class="cta" style="width:100%">Cambiar contraseña</button></form>`);
           $('#reset-form').addEventListener('submit', async (ev) => {

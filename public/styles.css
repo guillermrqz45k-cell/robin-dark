@@ -312,6 +312,7 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
 .modal-head h2 { margin: 0; font-size: 20px; }
 .close-btn { background: var(--surface-2); border: 0; border-radius: 50%; width: 34px; height: 34px; font-size: 16px; }
+.modal-close-row { display: flex; justify-content: flex-end; }
 .ghost-hero { text-align: center; padding: 8px 0 4px; }
 .ghost-hero .ghost-badge { width: 84px; height: 84px; }
 .ghost-hero .ghost-svg { width: 60px; height: 60px; }
