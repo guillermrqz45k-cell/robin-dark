@@ -245,6 +245,28 @@ async function main() {
     r = await req('PATCH', '/api/users/me/profile', authorTok, { bio: 'Solo cambio la bio.' });
     check('cambiar solo la bio no publica nada', r.status === 200 && r.data.published_posts === 0, JSON.stringify(r.data));
 
+    console.log('== El dueño da y quita el verificado directo ==');
+    r = await req('POST', '/api/users/autor1/verify', authorTok, { verified: true });
+    check('dar verificado sin ser dueño -> 403', r.status === 403, JSON.stringify(r.data));
+    r = await req('POST', '/api/users/noexiste123/verify', adminUser.token, { verified: true });
+    check('dar verificado a alias inexistente -> 404', r.status === 404, JSON.stringify(r.data));
+    r = await req('POST', '/api/users/jefe/verify', adminUser.token, { verified: true });
+    check('verificar al dueño -> 409 (ya lleva Admin y verificado)', r.status === 409, JSON.stringify(r.data));
+    r = await req('POST', '/api/users/autor1/verify', adminUser.token, { verified: true });
+    check('el dueño da verificado -> 200', r.status === 200 && r.data.verified === true, JSON.stringify(r.data));
+    const profVer = await req('GET', '/api/users/autor1/profile');
+    check('el perfil público ya muestra verificado', profVer.status === 200 && profVer.data.verified === true, JSON.stringify(profVer.data));
+    r = await req('POST', '/api/users/autor1/verify', adminUser.token, { verified: false });
+    check('el dueño quita el verificado -> 200', r.status === 200 && r.data.verified === false, JSON.stringify(r.data));
+
+    console.log('== Cambiar el nombre del perfil ==');
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: 'Autor Nuevo' });
+    check('cambiar el nombre -> 200 y no publica nada', r.status === 200 && r.data.user.real_name === 'Autor Nuevo' && r.data.published_posts === 0, JSON.stringify(r.data));
+    const profName = await req('GET', '/api/users/autor1/profile');
+    check('el perfil público muestra el nombre nuevo', profName.status === 200 && profName.data.real_name === 'Autor Nuevo', JSON.stringify(profName.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { real_name: '   ' });
+    check('nombre vacío -> 400', r.status === 400, JSON.stringify(r.data));
+
     console.log('== Cliente: sin tienda, con mensajes, perfil, insignias y compartir ==');
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
     const appJs = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
