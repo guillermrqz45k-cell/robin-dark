@@ -36,6 +36,7 @@ const { requireAuth, optionalAuth } = require('../middleware/auth');
 const { requireIdParam, requireObjectBody } = require('../middleware/validate');
 const photos = require('../photos');
 const { authorCard, collectAvatarIds } = require('../present');
+const security = require('../security');
 
 const router = express.Router();
 const ALIAS_RE = /^[a-zA-Z0-9_.-]{3,30}$/;
@@ -441,6 +442,19 @@ router.get('/me/verification-requests', requireAuth, requireOwner, async (req, r
   }
 });
 
+// GET /api/users/me/security-events — actividad sospechosa
+// reciente, solo para el dueño (sin interfaz todavía: se ve en
+// los logs de Railway con el prefijo [security] y desde aquí).
+router.get('/me/security-events', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const events = await security.listEvents(100);
+    return res.json({ events });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cargar la actividad.' });
+  }
+});
+
 // POST /api/users/me/verification-requests/:id/approve — el dueño
 // otorga el verificado: el usuario queda verificado (✓ Verificado).
 router.post('/me/verification-requests/:id/approve', requireAuth, requireOwner, requireObjectBody, async (req, res) => {
@@ -457,6 +471,7 @@ router.post('/me/verification-requests/:id/approve', requireAuth, requireOwner, 
       [String(req.body.note || '').trim().slice(0, 300), id],
     );
     await db.query('UPDATE users SET verified = $1 WHERE id = $2', [true, request.user_id]);
+    await security.logEvent({ event: 'verify_granted', ip: req.ip, userId: req.user.id, detail: `solicitud ${id} (usuario ${request.user_id})` });
     return res.json({ ok: true, request_id: id, status: 'approved' });
   } catch (e) {
     console.error(e);
@@ -478,6 +493,7 @@ router.post('/:alias/verify', requireAuth, requireOwner, requireObjectBody, asyn
     if (isAdminUser(user)) return res.status(409).json({ error: 'El dueño ya lleva Admin y verificado.' });
     const verified = req.body.verified !== false;
     await db.query('UPDATE users SET verified = $1 WHERE id = $2', [verified, user.id]);
+    await security.logEvent({ event: verified ? 'verify_granted' : 'verify_revoked', ip: req.ip, userId: req.user.id, detail: `@${user.alias}` });
     return res.json({ ok: true, alias: user.alias, verified });
   } catch (e) {
     console.error(e);
@@ -501,6 +517,7 @@ router.post('/me/verification-requests/:id/reject', requireAuth, requireOwner, r
       `UPDATE verification_requests SET status = 'rejected', reviewed_at = ${NOW_SQL}, review_note = $1 WHERE id = $2`,
       [String(req.body.note || '').trim().slice(0, 300), id],
     );
+    await security.logEvent({ event: 'verification_rejected', ip: req.ip, userId: req.user.id, detail: `solicitud ${id} (usuario ${request.user_id})` });
     return res.json({ ok: true, request_id: id, status: 'rejected' });
   } catch (e) {
     console.error(e);

@@ -65,6 +65,7 @@ const { authLimiter, recoveryLimiter } = require('../middleware/rateLimit');
 const { requireObjectBody } = require('../middleware/validate');
 const { isAdminAlias, isAdminUser, effectiveVerified } = require('../reputation');
 const mail = require('../mail');
+const security = require('../security');
 
 const router = express.Router();
 const RESET_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutos
@@ -200,8 +201,14 @@ router.post('/verify-email', recoveryLimiter, requireObjectBody, async (req, res
       [user.id, false],
     );
     if (!row) return bad();
-    if (row.expires_at <= Date.now()) return bad();
-    if (row.code_hash !== hashCode(code)) return bad();
+    if (row.expires_at <= Date.now()) {
+      await security.logEvent({ event: 'verify_code_failed', ip: req.ip, userId: user.id, detail: `código caducado (${security.maskEmail(email)})` });
+      return bad();
+    }
+    if (row.code_hash !== hashCode(code)) {
+      await security.logEvent({ event: 'verify_code_failed', ip: req.ip, userId: user.id, detail: `código incorrecto (${security.maskEmail(email)})` });
+      return bad();
+    }
 
     const marked = await db.query(
       'UPDATE email_verification_codes SET used = $1 WHERE id = $2 AND used = $3',
@@ -232,6 +239,7 @@ router.post('/resend-verification', recoveryLimiter, requireObjectBody, async (r
       return resendReply(res);
     }
     await sendVerificationCode(user);
+    await security.logEvent({ event: 'verification_resent', ip: req.ip, userId: user.id, detail: security.maskEmail(email) });
     return resendReply(res);
   } catch (e) {
     console.error(e);
@@ -256,10 +264,14 @@ router.post('/login', authLimiter, requireObjectBody, async (req, res) => {
       // Comparación falsa para que el tiempo de respuesta no revele
       // si el correo existe o no.
       await checkPasswordDummy(password);
+      await security.logEvent({ event: 'login_failed', ip: req.ip, userId: null, detail: `correo no registrado (${security.maskEmail(email)})` });
       return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
     }
     const ok = await checkPassword(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+    if (!ok) {
+      await security.logEvent({ event: 'login_failed', ip: req.ip, userId: user.id, detail: `contraseña incorrecta (${security.maskEmail(email)})` });
+      return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+    }
 
     // La entrada queda bloqueada hasta confirmar el correo
     // (decisión de AMO, 2026-11-20): sin verificar, no se entra,
@@ -331,6 +343,7 @@ router.post('/forgot', recoveryLimiter, requireObjectBody, async (req, res) => {
       console.error('[auth] no se pudo enviar el código de recuperación a', user.email);
       return forgotReply(res);
     }
+    await security.logEvent({ event: 'recovery_requested', ip: req.ip, userId: user.id, detail: security.maskEmail(email) });
     return forgotReply(res);
   } catch (e) {
     console.error(e);
@@ -372,6 +385,7 @@ router.post('/reset', recoveryLimiter, requireObjectBody, async (req, res) => {
     if (!marked.rowCount) return bad();
     const passwordHash = await hashPassword(password);
     await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, user.id]);
+    await security.logEvent({ event: 'password_reset', ip: req.ip, userId: user.id, detail: security.maskEmail(email) });
     return res.json({ ok: true, message: 'Contraseña cambiada. Ya puedes entrar con tu contraseña nueva.' });
   } catch (e) {
     console.error(e);
