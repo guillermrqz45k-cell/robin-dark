@@ -164,7 +164,7 @@ async function main() {
 
     console.log('== Foto de avatar ==');
     r = await req('PATCH', '/api/users/me/profile', tok1, { bio: 'Hola, vendo de todo.', avatar: { mime: 'image/png', data: PNG_1X1 } });
-    check('PATCH perfil con avatar -> 200', r.status === 200, JSON.stringify(r.data));
+    check('PATCH perfil con avatar -> 200 y publica la foto', r.status === 200 && r.data.published_posts === 1, JSON.stringify(r.data));
     check('perfil guarda bio y avatar_url', r.data.user && r.data.user.bio === 'Hola, vendo de todo.'
       && r.data.user.avatar_url && r.data.user.avatar_url.startsWith('/api/photos/'), JSON.stringify(r.data));
     const avatarUrl = r.data.user.avatar_url;
@@ -224,7 +224,7 @@ async function main() {
     r = await req('GET', '/api/users/prueba1/profile');
     check('perfil público: bio, avatar, seguidores y estrellas', r.data.bio === 'Hola, vendo de todo.'
       && r.data.avatar_url && r.data.avatar_url.startsWith('/api/photos/')
-      && r.data.followers_count === 1 && r.data.posts_count === 2
+      && r.data.followers_count === 1 && r.data.posts_count === 3
       && r.data.avg_stars === 5 && r.data.ratings_count === 1, JSON.stringify(r.data));
 
     console.log('== Reacciones, compartir, sentimiento y notificaciones ==');
@@ -241,6 +241,10 @@ async function main() {
     check('mismo wow otra vez lo quita', r.status === 200 && r.data.liked === false && r.data.my_reaction === null, JSON.stringify(r.data));
     r = await req('POST', `/api/social/posts/${postId}/like`, tok2, {});
     check('like sin tipo es 👍', r.status === 200 && r.data.liked === true && r.data.my_reaction === 'like' && r.data.reactions.like === 1, JSON.stringify(r.data));
+    r = await req('GET', `/api/social/posts/${postId}/reactions`, undefined);
+    check('quién reaccionó: 1 like de prueba2, sin sesión', r.status === 200 && r.data.reactions.length === 1 && r.data.reactions[0].kind === 'like' && r.data.reactions[0].user.alias === 'prueba2', JSON.stringify(r.data));
+    r = await req('GET', '/api/social/posts/999999/reactions', undefined);
+    check('reacciones de post inexistente -> 404', r.status === 404, JSON.stringify(r.data));
     r = await req('POST', `/api/social/posts/${postId}/share`, tok2, {});
     check('compartir -> shares 1', r.status === 200 && r.data.shares === 1, JSON.stringify(r.data));
     r = await req('POST', `/api/social/posts/${postId}/share`, tok2, {});

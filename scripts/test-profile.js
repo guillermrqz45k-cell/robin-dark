@@ -229,6 +229,22 @@ async function main() {
     check('fórmula: con 1 quitado la insignia Top se mantiene (10 posts + 90 días)', badgeFor({ days: 100, posts: 10, rejected: 1 }).key === 'top');
     check('fórmula: con 1 quitado y 5 posts no hay Confiable', badgeFor({ days: 100, posts: 5, rejected: 1 }).key === 'miembro');
 
+    console.log('== Foto de perfil y portada se publican ==');
+    // PNG 1x1 válido.
+    const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { avatar: { mime: 'image/png', data: TINY_PNG } });
+    check('cambiar foto de perfil -> 200 y 1 publicación', r.status === 200 && r.data.published_posts === 1, JSON.stringify(r.data));
+    const profPosts = await req('GET', '/api/users/autor1/posts');
+    check('la publicación de la foto está en el perfil', profPosts.status === 200 && profPosts.data.posts.some((p) => p.text === 'actualizó su foto de perfil.' && p.photo_url), JSON.stringify(profPosts.data));
+    const feedAfter = await req('GET', '/api/social/feed?tab=para_ti', authorTok);
+    check('la publicación de la foto está en el inicio', feedAfter.status === 200 && feedAfter.data.posts.some((p) => p.text === 'actualizó su foto de perfil.'), JSON.stringify(feedAfter.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { cover: { mime: 'image/png', data: TINY_PNG } });
+    check('cambiar foto de portada -> 200 y 1 publicación', r.status === 200 && r.data.published_posts === 1, JSON.stringify(r.data));
+    const profPosts2 = await req('GET', '/api/users/autor1/posts');
+    check('la publicación de la portada está en el perfil', profPosts2.status === 200 && profPosts2.data.posts.some((p) => p.text === 'actualizó su foto de portada.' && p.photo_url), JSON.stringify(profPosts2.data));
+    r = await req('PATCH', '/api/users/me/profile', authorTok, { bio: 'Solo cambio la bio.' });
+    check('cambiar solo la bio no publica nada', r.status === 200 && r.data.published_posts === 0, JSON.stringify(r.data));
+
     console.log('== Cliente: sin tienda, con mensajes, perfil, insignias y compartir ==');
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
     const appJs = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
