@@ -47,12 +47,14 @@ async function init() {
         alias TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         -- Rango con letras: admin / moderator / veteran / new.
-        -- 'new' es el rango por defecto al registrarse. El alias de
-        -- ADMIN_ALIAS siempre es admin, aunque el campo diga otra
-        -- cosa (eso se resuelve en src/reputation.js, no aquí).
+        -- 'new' es el rango por defecto al registrarse. El rango
+        -- 'admin' solo lo concede el dueño desde el perfil (ver
+        -- src/reputation.js): el alias de ADMIN_ALIAS solo
+        -- identifica al dueño, no da admin por sí solo.
         rank TEXT NOT NULL DEFAULT 'new' CHECK (rank IN ('admin', 'moderator', 'veteran', 'new')),
         -- Verificación: el admin verifica usuarios desde el panel.
-        -- El alias de ADMIN_ALIAS siempre se muestra verificado.
+        -- Un usuario con rango 'admin' siempre se muestra
+        -- verificado.
         verified BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -112,12 +114,18 @@ async function init() {
       if (!/already exists/i.test(e.message || '')) throw e;
     }
     await pool.query(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
-    // El dueño se marca por rango, no solo por alias (2026-11-20):
-    // si cambia su @usuario, sigue siendo Admin porque el rango
-    // vive en su fila (por id). Se marca al arrancar, sin borrar
-    // nada; es idempotente.
+    // Arranque inicial del dueño (2026-11-20): el rango 'admin'
+    // solo lo concede el dueño desde el perfil. Aquí solo se
+    // asegura que en una base limpia (sin ningún admin) el dueño
+    // (alias ADMIN_ALIAS, si ya existe) nazca admin, para que el
+    // sitio no quede sin dueño. Si ya hay un admin, NO se toca
+    // nada: así nadie puede volverse admin registrándose con el
+    // alias del dueño (antes la reafirmación era incondicional).
     if (process.env.ADMIN_ALIAS) {
-      await pool.query(`UPDATE users SET rank = 'admin' WHERE alias = $1`, [process.env.ADMIN_ALIAS]);
+      const admins = await pool.query(`SELECT COUNT(*) AS n FROM users WHERE rank = 'admin'`);
+      if (Number(admins.rows[0].n) === 0) {
+        await pool.query(`UPDATE users SET rank = 'admin' WHERE alias = $1`, [process.env.ADMIN_ALIAS]);
+      }
     }
     // Migración stock (2026-11-16): un anuncio ya no es de una sola
     // unidad. Bases ya creadas (Railway) no tienen la columna stock
@@ -521,12 +529,18 @@ async function init() {
       sqlite.exec(`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;`);
     }
     sqlite.exec(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
-    // El dueño se marca por rango, no solo por alias (2026-11-20):
-    // si cambia su @usuario, sigue siendo Admin porque el rango
-    // vive en su fila (por id). Se marca al arrancar, sin borrar
-    // nada; es idempotente.
+    // Arranque inicial del dueño (2026-11-20): el rango 'admin'
+    // solo lo concede el dueño desde el perfil. Aquí solo se
+    // asegura que en una base limpia (sin ningún admin) el dueño
+    // (alias ADMIN_ALIAS, si ya existe) nazca admin, para que el
+    // sitio no quede sin dueño. Si ya hay un admin, NO se toca
+    // nada: así nadie puede volverse admin registrándose con el
+    // alias del dueño (antes la reafirmación era incondicional).
     if (process.env.ADMIN_ALIAS) {
-      sqlite.prepare(`UPDATE users SET rank = 'admin' WHERE alias = ?`).run(process.env.ADMIN_ALIAS);
+      const admins = sqlite.prepare(`SELECT COUNT(*) AS n FROM users WHERE rank = 'admin'`).get();
+      if (Number(admins.n) === 0) {
+        sqlite.prepare(`UPDATE users SET rank = 'admin' WHERE alias = ?`).run(process.env.ADMIN_ALIAS);
+      }
     }
     // Migración stock en SQLite (bases locales ya creadas):
     // - Se elimina el índice único parcial de pedidos por anuncio.

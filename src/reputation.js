@@ -22,9 +22,10 @@
 // = 10 + 20 + 10 + 10 = 50.
 //
 // Insignias del perfil (en este orden, la primera que se cumpla):
-//   Admin:       el dueño del sitio: rango 'admin' en su fila (o
-//                el alias ADMIN_ALIAS de entorno). El rango vive en
-//                la fila del usuario (por id), así que si el dueño
+//   Admin:       rango 'admin' en su fila. Lo llevan el dueño
+//                del sitio (alias ADMIN_ALIAS) y los admins que
+//                él concede desde el perfil. El rango vive en la
+//                fila del usuario (por id), así que si alguien
 //                cambia su @usuario sigue siendo Admin. Insignia
 //                especial dorada + ✓ Verificado.
 //   Nuevo:       menos de 30 días en la plataforma.
@@ -42,8 +43,8 @@
 //   «Antiguo» salen de la misma fecha, no hay dos cuentas distintas.
 //
 // Verificación (columna users.verified): un usuario verificado
-// muestra el ✓ Verificado azul junto a su alias. El alias de
-// ADMIN_ALIAS siempre se muestra verificado, aunque el campo
+// muestra el ✓ Verificado azul junto a su alias. Un usuario con
+// rango 'admin' siempre se muestra verificado, aunque el campo
 // guardado sea false. Los demás solo pueden pedir la verificación
 // con documento si tienen 500 o más amigos o seguidores, y la
 // aprueba el dueño desde su propio perfil.
@@ -51,21 +52,34 @@
 // NO hay rangos con letras (A/M/V/N) ni rol de moderador: se
 // quitaron del port por decisión del dueño (2026-11-20). La columna
 // users.rank solo se usa con el valor 'admin' para marcar al dueño
-// del sitio (los demás quedan en 'new'); ningún otro valor se
-// muestra ni da permisos.
+// del sitio y a los admins que él concede desde el perfil (los
+// demás quedan en 'new'); ningún otro valor se muestra ni da
+// permisos.
 function isAdminAlias(alias) {
   return Boolean(process.env.ADMIN_ALIAS) && alias === process.env.ADMIN_ALIAS;
 }
 
-// Dueño del sitio: rango 'admin' en su fila o alias ADMIN_ALIAS.
-// El rango es lo que sobrevive a un cambio de @usuario: vive en la
-// fila del usuario (por id), no en el alias. Recibe una fila de
-// usuario (o el payload del token, que lleva alias y rango).
+// Admin: SOLO el rango 'admin' en su fila. El alias ya no da
+// admin por sí solo: nadie se vuelve admin registrándose con
+// el alias del dueño, ni por llevar ese alias. El admin es un
+// rango que solo el dueño concede (POST /api/users/:alias/admin).
+// Recibe una fila de usuario (o el payload del token, que lleva
+// alias y rango). El rango es lo que sobrevive a un cambio de
+// @usuario: vive en la fila del usuario (por id), no en el alias.
 function isAdminUser(user) {
-  return Boolean(user) && (user.rank === 'admin' || isAdminAlias(user.alias));
+  return Boolean(user) && user.rank === 'admin';
 }
 
-// Verificación efectiva: el campo guardado, o el dueño, que
+// Dueño del sitio: el usuario cuyo alias es ADMIN_ALIAS
+// (Darkmous). ADMIN_ALIAS solo identifica al dueño: sirve para
+// el arranque inicial (si no hay ningún admin) y para protegerlo
+// (no se le puede quitar el admin ni inhabilitarlo). No da admin
+// por sí solo: el dueño también lleva rango 'admin' en su fila.
+function isOwner(user) {
+  return Boolean(user) && isAdminAlias(user.alias);
+}
+
+// Verificación efectiva: el campo guardado, o un admin, que
 // siempre se muestra verificado. El campo llega como boolean
 // (Postgres) o como 0/1 (SQLite).
 function effectiveVerified({ verified = false, alias = '', rank = '' } = {}) {
@@ -128,4 +142,4 @@ function formatResponseTime(minutes) {
   return `${hours} h`;
 }
 
-module.exports = { clamp, daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime, isAdminAlias, isAdminUser, effectiveVerified };
+module.exports = { clamp, daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime, isAdminAlias, isAdminUser, isOwner, effectiveVerified };
