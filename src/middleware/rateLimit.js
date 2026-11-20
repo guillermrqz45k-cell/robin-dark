@@ -15,6 +15,7 @@
 // (útil para las pruebas automatizadas), pero en producción valen
 // los valores por defecto.
 const rateLimit = require('express-rate-limit');
+const security = require('../security');
 
 function numEnv(name, fallback) {
   const v = Number(process.env[name]);
@@ -22,6 +23,15 @@ function numEnv(name, fallback) {
 }
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+
+// Cuando se alcanza un límite, además de responder 429 se registra
+// el intento: muchos 429 desde una misma IP son señal de un ataque
+// de fuerza bruta o de un escaneo. El registro nunca rompe la
+// respuesta: si la base falla, solo se avisa por consola.
+function limitHandler(req, res, next, options) {
+  security.logEvent({ event: 'rate_limited', ip: req.ip, userId: null, detail: `${req.method} ${req.path}` });
+  return res.status(429).json(options.message || { error: 'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.' });
+}
 
 // Límite general de la API: 300 peticiones / 15 min por IP.
 // Suficiente para uso normal; frena escaneos y abusos masivos.
@@ -33,6 +43,7 @@ const apiLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.' },
+  handler: limitHandler,
   skip: (req) => req.path === '/health' || req.path === '/api/health',
 });
 
@@ -45,6 +56,7 @@ const authLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Demasiados intentos. Espera 15 minutos e inténtalo de nuevo.' },
+  handler: limitHandler,
 });
 
 // Recuperación de contraseña: 5 intentos / 15 min por IP. Pedir
@@ -56,6 +68,7 @@ const recoveryLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de recuperación. Espera 15 minutos e inténtalo de nuevo.' },
+  handler: limitHandler,
 });
 
 // Asistente de IA: 60 preguntas / 15 min por IP. Aunque el
@@ -67,6 +80,7 @@ const aiLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Demasiadas preguntas a la asistente. Espera unos minutos.' },
+  handler: limitHandler,
 });
 
 module.exports = { apiLimiter, authLimiter, recoveryLimiter, aiLimiter };
