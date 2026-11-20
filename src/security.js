@@ -51,4 +51,15 @@ async function listEvents(limit = 100) {
   return rows;
 }
 
-module.exports = { logEvent, listEvents, maskEmail };
+// Cuenta los eventos de un tipo para un usuario en los últimos
+// `windowMs` milisegundos: sirve para frenar por cuenta (no solo
+// por IP) los intentos de adivinar el código de verificación.
+async function countEvents(event, userId, windowMs) {
+  const { rows } = await db.query(
+    'SELECT COUNT(*) AS n FROM security_events WHERE event = $1 AND user_id = $2 AND created_at > $3',
+    [event, userId, Date.now() - windowMs],
+  );
+  return rows.length ? Number(rows[0].n) || 0 : 0;
+}
+
+module.exports = { logEvent, listEvents, countEvents, maskEmail };

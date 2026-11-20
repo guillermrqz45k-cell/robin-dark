@@ -172,6 +172,15 @@ async function init() {
     // en Postgres y SQLite). NULL = nunca se ha cambiado.
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS real_name_changed_at BIGINT;`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alias_changed_at BIGINT;`);
+    // Revocación de sesiones y bloqueo por cuenta (2026-11-20):
+    // - token_version: cambia cada vez que se cambia la contraseña;
+    //   los tokens con la versión vieja dejan de valer.
+    // - failed_logins / locked_until: tras 5 intentos fallidos con
+    //   la misma cuenta, la cuenta queda bloqueada 15 minutos
+    //   (frena la fuerza bruta aunque venga de muchas IPs).
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins INTEGER NOT NULL DEFAULT 0;`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until BIGINT;`);
     try {
       await pool.query(`ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);`);
     } catch (e) {
@@ -491,6 +500,17 @@ async function init() {
     }
     if (!userCols.some((c) => c.name === 'verified')) {
       sqlite.exec(`ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;`);
+    }
+    // Revocación de sesiones y bloqueo por cuenta (2026-11-20):
+    // token_version, failed_logins y locked_until (ver Postgres).
+    if (!userCols.some((c) => c.name === 'token_version')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;`);
+    }
+    if (!userCols.some((c) => c.name === 'failed_logins')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0;`);
+    }
+    if (!userCols.some((c) => c.name === 'locked_until')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN locked_until INTEGER;`);
     }
     sqlite.exec(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
     // El dueño se marca por rango, no solo por alias (2026-11-20):

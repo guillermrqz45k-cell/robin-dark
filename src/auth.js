@@ -63,10 +63,22 @@ function signToken(user, extra = {}) {
   // aunque cambie su @usuario (el rango vive en su fila, por id).
   // Los tokens viejos no lo llevan: en ese caso el Admin se
   // reconoce por el alias, como antes.
-  return jwt.sign({ id: user.id, alias: user.alias, rank: user.rank, ...extra }, SECRET, {
+  // tv = versión del token: cambia cada vez que se cambia la
+  // contraseña, para que los tokens viejos dejen de valer (el
+  // middleware lo comprueba contra la base de datos). Los tokens
+  // viejos no llevan tv: se tratan como versión 0.
+  return jwt.sign({ id: user.id, alias: user.alias, rank: user.rank, tv: Number(user.token_version) || 0, ...extra }, SECRET, {
     expiresIn: JWT_EXPIRES,
     algorithm: 'HS256',
   });
+}
+
+// Quita las etiquetas HTML (<...>) de un texto: el nombre real y
+// la bio se guardan sin HTML, para que ningún cliente futuro que
+// los muestre sin escapar pueda ejecutar código. El resto del
+// texto (incluidos los caracteres < y > sueltos) se conserva.
+function stripHtml(value) {
+  return String(value || '').replace(/<[^>]*>/g, '');
 }
 
 function verifyToken(token) {
@@ -107,4 +119,5 @@ module.exports = {
   cleanEmail,
   validEmail,
   hashCode,
+  stripHtml,
 };

@@ -62,4 +62,15 @@ function verificationMail(code) {
   };
 }
 
-module.exports = { isConfigured, sendMail, recoveryMail, verificationMail };
+// Alguien intentó crear una cuenta con un correo que ya existe:
+// se avisa al dueño del correo (sin decirle nada al que lo
+// intentó, para no revelar qué correos tienen cuenta).
+function accountExistsMail() {
+  return {
+    subject: 'Alguien intentó crear una cuenta con tu correo en Robin Dark',
+    text: `Alguien intentó crear una cuenta en Robin Dark con este correo.\n\nSi fuiste tú y ya tienes cuenta, entra con tu correo y tu contraseña en robindark.co (no necesitas registrarte de nuevo). Si empezaste un registro y no lo terminaste, vuelve a pedir el código en la página.\n\nSi no fuiste tú, ignora este correo: nadie puede entrar a tu cuenta con solo tu correo.`,
+    html: `<p>Alguien intentó crear una cuenta en Robin Dark con este correo.</p><p>Si fuiste tú y ya tienes cuenta, entra con tu correo y tu contraseña en robindark.co (no necesitas registrarte de nuevo). Si empezaste un registro y no lo terminaste, vuelve a pedir el código en la página.</p><p>Si no fuiste tú, ignora este correo: nadie puede entrar a tu cuenta con solo tu correo.</p>`,
+  };
+}
+
+module.exports = { isConfigured, sendMail, recoveryMail, verificationMail, accountExistsMail };
