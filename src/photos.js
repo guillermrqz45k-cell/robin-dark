@@ -51,6 +51,29 @@ function isPrivateKind(kind) {
   return kind === 'document';
 }
 
+// Comprueba el contenido real del archivo por sus primeros bytes
+// (magic bytes): JPEG empieza FF D8 FF, PNG 89 50 4E 47 0D 0A 1A 0A,
+// MP4 lleva 'ftyp' en los bytes 4-7 y WebM el encabezado EBML
+// 1A 45 DF A3. Sin esto, bastaba con etiquetar cualquier archivo
+// como image/png para que pasara el filtro de tipo.
+function matchesMagicBytes(buffer, mime) {
+  if (mime === 'image/jpeg') {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (mime === 'image/png') {
+    return buffer.length >= 8
+      && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
+      && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a;
+  }
+  if (mime === 'video/mp4') {
+    return buffer.length >= 8 && buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70;
+  }
+  if (mime === 'video/webm') {
+    return buffer.length >= 4 && buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3;
+  }
+  return false;
+}
+
 // Decodifica una subida { mime, data } (data en base64, con o sin
 // prefijo "data:image/jpeg;base64,"). Devuelve { mime, buffer } o
 // un { error } con el mensaje para el cliente.
@@ -89,6 +112,13 @@ function decodeUpload(input, { allowVideo = false } = {}) {
   const max = isVideo ? MAX_VIDEO_BYTES : MAX_PHOTO_BYTES;
   if (buffer.length > max) {
     return { error: isVideo ? 'El vídeo no puede pesar más de 20 MB.' : 'La foto no puede pesar más de 5 MB.' };
+  }
+  // El mime lo declara quien sube el archivo: se comprueba el
+  // contenido real (magic bytes) para que un archivo disfrazado
+  // (un HTML o un SVG con script etiquetado como image/png) no
+  // pase el filtro de tipo.
+  if (!matchesMagicBytes(buffer, mime)) {
+    return { error: isVideo ? 'El vídeo no es un MP4 o WebM válido.' : 'La foto no es un JPG o PNG válido.' };
   }
   return { mime, buffer };
 }
@@ -212,6 +242,7 @@ module.exports = {
   backend,
   isPrivateKind,
   decodeUpload,
+  matchesMagicBytes,
   photoUrl,
   urlsByIds,
   infoByIds,

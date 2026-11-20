@@ -408,6 +408,15 @@ async function init() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_email_codes_user ON email_verification_codes (user_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS security_events (
+        id SERIAL PRIMARY KEY,
+        event TEXT NOT NULL,
+        ip TEXT,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        detail TEXT,
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events (created_at DESC);
     `);
     console.log('[db] Postgres conectado (DATABASE_URL)');
   } else {
@@ -459,6 +468,15 @@ async function init() {
         body TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS security_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        ip TEXT,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        detail TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events (created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id, created_at DESC);
