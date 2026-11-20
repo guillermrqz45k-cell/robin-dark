@@ -16,12 +16,16 @@ const { isAdminUser, effectiveVerified } = require('./reputation');
 function authorCard(row, photoUrls = new Map()) {
   if (!row) return null;
   const avatarId = row.avatar_photo_id ? Number(row.avatar_photo_id) : null;
+  const disabled = row.disabled === true || row.disabled === 1 || row.disabled === '1';
   return {
     id: row.id,
     alias: row.alias,
     is_admin: isAdminUser(row),
     verified: effectiveVerified({ verified: row.verified, alias: row.alias, rank: row.rank }),
     avatar_url: avatarId ? (photoUrls.get(avatarId) || null) : null,
+    // Solo sale cuando la cuenta está inhabilitada (el dueño la ve
+    // en las búsquedas para poder habilitarla de nuevo).
+    ...(disabled ? { disabled: true } : {}),
   };
 }
 

@@ -181,6 +181,10 @@ async function init() {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins INTEGER NOT NULL DEFAULT 0;`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until BIGINT;`);
+    // Inhabilitación permanente por el dueño (2026-11-20): la
+    // cuenta inhabilitada no puede entrar y desaparece de la vista
+    // de los demás (perfil, búsquedas, feed, listas).
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;`);
     try {
       await pool.query(`ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);`);
     } catch (e) {
@@ -511,6 +515,10 @@ async function init() {
     }
     if (!userCols.some((c) => c.name === 'locked_until')) {
       sqlite.exec(`ALTER TABLE users ADD COLUMN locked_until INTEGER;`);
+    }
+    // Inhabilitación permanente por el dueño (2026-11-20).
+    if (!userCols.some((c) => c.name === 'disabled')) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;`);
     }
     sqlite.exec(`UPDATE users SET rank = 'new' WHERE rank NOT IN ('admin', 'moderator', 'veteran', 'new');`);
     // El dueño se marca por rango, no solo por alias (2026-11-20):
