@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- Cuándo se cambió el nombre real por última vez (milisegundos
   -- desde epoch). El nombre solo se puede cambiar 1 vez al mes.
   real_name_changed_at BIGINT,
+  -- Cuándo se cambió el @usuario por última vez (milisegundos
+  -- desde epoch). El @usuario también solo se puede cambiar
+  -- 1 vez al mes.
+  alias_changed_at BIGINT,
   -- Rango con letras: admin / moderator / veteran / new ('new' por
   -- defecto al registrarse). El alias de ADMIN_ALIAS siempre es
   -- admin, aunque el campo diga otra cosa.
