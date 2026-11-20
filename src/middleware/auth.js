@@ -2,11 +2,12 @@
 // Lee el token JWT del encabezado Authorization: Bearer <token>.
 //
 // Hay una sola clase de token: el de usuario (sin role). El dueño
-// del sitio es un usuario más: su alias es el de ADMIN_ALIAS y se
-// reconoce por alias, no por un token aparte (no hay panel de
-// administrador ni login de admin). Un token viejo con role:
-// 'admin' se rechaza en las rutas de usuario, porque nunca fue
-// un token de usuario válido.
+// del sitio es un usuario más: se identifica por su alias
+// (ADMIN_ALIAS, isOwner) y lleva rango 'admin' en su fila, como
+// los admins que él concede (isAdminUser, solo por rango). No hay
+// panel de administrador ni login de admin. Un token viejo con
+// role: 'admin' se rechaza en las rutas de usuario, porque nunca
+// fue un token de usuario válido.
 //
 // El token solo prueba quién eres: el rango y la validez de la
 // sesión se comprueban siempre contra la base de datos, nunca
