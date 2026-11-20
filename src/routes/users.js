@@ -25,11 +25,17 @@
 //   de solicitudes pendientes, para aprobarlas desde su perfil.
 // POST /api/users/me/verification-requests/:id/approve|reject
 //   (solo el dueño): otorga o niega el verificado.
+// POST /api/users/:alias/verify (un admin): da o quita el
+//   verificado directamente desde el perfil.
+// POST /api/users/:alias/disable (un admin): inhabilita o
+//   habilita una cuenta que no cumple las normas.
+// POST /api/users/:alias/admin (solo el dueño): da o quita el
+//   rango admin a quien él quiera.
 const express = require('express');
 const db = require('../db');
 const {
   daysSince, computeReputation, badgeFor, seniority, median, formatResponseTime,
-  isAdminAlias, isAdminUser, effectiveVerified,
+  isAdminUser, isOwner, effectiveVerified,
 } = require('../reputation');
 const { signToken, stripHtml } = require('../auth');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
@@ -112,20 +118,20 @@ router.get('/', requireAuth, async (req, res) => {
     const q = String(req.query.search || req.query.q || '').trim().slice(0, 30);
     const limit = parseLimit(req, 20, 50);
     // Las cuentas inhabilitadas no salen en las búsquedas de los
-    // demás; el dueño sí las ve (con la marca) para poder
+    // demás; un admin sí las ve (con la marca) para poder
     // habilitarlas de nuevo.
-    const isOwner = isAdminUser(req.user);
+    const isAdmin = isAdminUser(req.user);
     let rows;
     if (q) {
       rows = (await db.query(
         `SELECT id, alias, verified, avatar_photo_id, rank, disabled FROM users
-         WHERE id <> $1 AND LOWER(alias) LIKE LOWER($2)${isOwner ? '' : ' AND disabled = FALSE'} ORDER BY alias ASC LIMIT $3`,
+         WHERE id <> $1 AND LOWER(alias) LIKE LOWER($2)${isAdmin ? '' : ' AND disabled = FALSE'} ORDER BY alias ASC LIMIT $3`,
         [req.user.id, `%${q}%`, limit],
       )).rows;
     } else {
       rows = (await db.query(
         `SELECT id, alias, verified, avatar_photo_id, rank, disabled FROM users
-         WHERE id <> $1${isOwner ? '' : ' AND disabled = FALSE'} ORDER BY created_at DESC, id DESC LIMIT $2`,
+         WHERE id <> $1${isAdmin ? '' : ' AND disabled = FALSE'} ORDER BY created_at DESC, id DESC LIMIT $2`,
         [req.user.id, limit],
       )).rows;
     }
@@ -162,6 +168,10 @@ router.get('/me', requireAuth, async (req, res) => {
         avatar_url: user.avatar_photo_id ? (photoUrls.get(Number(user.avatar_photo_id)) || null) : null,
         cover_url: user.cover_photo_id ? (photoUrls.get(Number(user.cover_photo_id)) || null) : null,
         is_admin: isAdminUser(user),
+        // is_owner: si es el dueño (alias ADMIN_ALIAS). El cliente
+        // lo usa para mostrar lo que solo el dueño puede hacer
+        // (por ejemplo, dar o quitar el admin desde un perfil).
+        is_owner: isOwner(user),
         verified: effectiveVerified({ verified: user.verified, alias: user.alias, rank: user.rank }),
         member_since: user.created_at,
         ...counts,
@@ -234,13 +244,9 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
         params.push(newAlias);
         updates.push(`alias_changed_at = $${params.length + 1}`);
         params.push(Date.now());
-        // Si el dueño cambia su @usuario, su rango 'admin' se queda
-        // en su fila (por id): se reafirma aquí por si la marca de
-        // arranque no lo había puesto.
-        if (isAdminAlias(user.alias)) {
-          updates.push(`rank = $${params.length + 1}`);
-          params.push('admin');
-        }
+        // El rango 'admin' vive en la fila (por id): si el dueño
+        // (o un admin) cambia su @usuario, sigue siendo Admin sin
+        // necesidad de reafirmarlo aquí.
         aliasChanged = true;
       }
     }
@@ -322,7 +328,7 @@ router.patch('/me/profile', requireAuth, requireObjectBody, async (req, res) => 
 router.post('/me/verification', requireAuth, requireObjectBody, async (req, res) => {
   try {
     if (isAdminUser(req.user)) {
-      return res.status(409).json({ error: 'La cuenta del dueño ya está verificada.' });
+      return res.status(409).json({ error: 'Una cuenta Admin ya está verificada.' });
     }
     const counts = await followCounts(req.user.id);
     if (counts.followers_count < 500 && counts.following_count < 500) {
@@ -394,12 +400,24 @@ router.get('/me/verification', requireAuth, async (req, res) => {
 });
 
 // Solo el dueño (alias de ADMIN_ALIAS) puede ver y resolver las
-// solicitudes de verificación: es su insignia y su decisión, y
-// las revisa desde su propio perfil, en una lista pequeña solo
-// para él. No hay panel de administrador.
+// solicitudes de verificación y dar o quitar el admin: es su
+// insignia y su decisión, y las revisa desde su propio perfil,
+// en una lista pequeña solo para él. No hay panel de
+// administrador.
+//
+// Solo un admin (rango 'admin' en su fila: el dueño o alguien a
+// quien él se lo concedió) puede dar o quitar el verificado y
+// inhabilitar cuentas que no cumplen las normas.
 function requireOwner(req, res, next) {
+  if (!isOwner(req.user)) {
+    return res.status(403).json({ error: 'Solo el dueño puede hacer esto.' });
+  }
+  return next();
+}
+
+function requireAdmin(req, res, next) {
   if (!isAdminUser(req.user)) {
-    return res.status(403).json({ error: 'Solo el dueño puede ver esto.' });
+    return res.status(403).json({ error: 'Solo un admin puede hacer esto.' });
   }
   return next();
 }
@@ -483,12 +501,12 @@ router.post('/me/verification-requests/:id/approve', requireAuth, requireOwner, 
   }
 });
 
-// POST /api/users/:alias/verify — el dueño da o quita el
+// POST /api/users/:alias/verify — un admin da o quita el
 // verificado directamente desde el perfil, sin que la persona
 // tenga que pedirlo (no pasa por la puerta de 500 seguidores).
 // { verified: true } para darlo, { verified: false } para
-// quitarlo. Solo el dueño.
-router.post('/:alias/verify', requireAuth, requireOwner, requireObjectBody, async (req, res) => {
+// quitarlo. Cualquier admin puede hacerlo.
+router.post('/:alias/verify', requireAuth, requireAdmin, requireObjectBody, async (req, res) => {
   try {
     const alias = String(req.params.alias || '');
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
@@ -505,26 +523,33 @@ router.post('/:alias/verify', requireAuth, requireOwner, requireObjectBody, asyn
   }
 });
 
-// POST /api/users/:alias/disable — el dueño inhabilita (o vuelve
+// POST /api/users/:alias/disable — un admin inhabilita (o vuelve
 // a habilitar) una cuenta que no cumple las normas, igual que da
 // el verificado desde el perfil. { disabled: true } para
-// inhabilitarla, { disabled: false } para devolverla. Solo el
-// dueño; el dueño no puede inhabilitarse a sí mismo.
+// inhabilitarla, { disabled: false } para devolverla. Cualquier
+// admin puede inhabilitar a un usuario normal, pero solo el dueño
+// puede inhabilitar a otro admin; al dueño no lo puede inhabilitar
+// nadie (ni él mismo).
 // - Inhabilitada: no puede entrar (403 «Tu cuenta ha sido
 //   inhabilitada permanentemente.») y su sesión muere (se sube
 //   token_version para que sus tokens viejos dejen de valer).
 // - Desaparece de la vista de los demás: su perfil da 404, no
 //   sale en búsquedas ni en el feed, ni en historias/reels, ni en
 //   las listas de seguidores, y sus publicaciones no se ven.
-// - El dueño sí sigue viendo su perfil (con «Inhabilitada») para
+// - Un admin sí sigue viendo su perfil (con «Inhabilitada») para
 //   poder habilitarla de nuevo si se equivoca.
-router.post('/:alias/disable', requireAuth, requireOwner, requireObjectBody, async (req, res) => {
+router.post('/:alias/disable', requireAuth, requireAdmin, requireObjectBody, async (req, res) => {
   try {
     const alias = String(req.params.alias || '');
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
     const user = await db.get('SELECT id, alias, rank, disabled FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
-    if (isAdminUser(user)) return res.status(409).json({ error: 'No puedes inhabilitar la cuenta del dueño.' });
+    // Al dueño no lo inhabilita nadie.
+    if (isOwner(user)) return res.status(409).json({ error: 'No puedes inhabilitar la cuenta del dueño.' });
+    // A otro admin solo lo puede inhabilitar el dueño.
+    if (isAdminUser(user) && !isOwner(req.user)) {
+      return res.status(409).json({ error: 'Solo el dueño puede inhabilitar a un admin.' });
+    }
     const disabled = req.body.disabled !== false;
     if (disabled) {
       await db.query('UPDATE users SET disabled = $1, token_version = token_version + 1 WHERE id = $2', [true, user.id]);
@@ -536,6 +561,33 @@ router.post('/:alias/disable', requireAuth, requireOwner, requireObjectBody, asy
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudo cambiar la cuenta.' });
+  }
+});
+
+// POST /api/users/:alias/admin — solo el dueño da o quita el
+// admin a quien él quiera. { admin: true } para darlo,
+// { admin: false } para quitarlo. El admin es un rango que vive
+// en la fila del usuario (por id): nadie se lo puede dar a sí
+// mismo registrándose, y un admin concedido no puede dar admin
+// a nadie (solo el dueño). Al dueño no se le puede quitar el
+// admin (409); darle admin es idempotente (en una base limpia el
+// dueño se registra como 'new' y así se hace admin).
+router.post('/:alias/admin', requireAuth, requireOwner, requireObjectBody, async (req, res) => {
+  try {
+    const alias = String(req.params.alias || '');
+    if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
+    const user = await db.get('SELECT id, alias, rank FROM users WHERE alias = $1', [alias]);
+    if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    const admin = req.body.admin !== false;
+    if (isOwner(user) && !admin) {
+      return res.status(409).json({ error: 'Al dueño no se le puede quitar el admin.' });
+    }
+    await db.query('UPDATE users SET rank = $1 WHERE id = $2', [admin ? 'admin' : 'new', user.id]);
+    await security.logEvent({ event: admin ? 'admin_granted' : 'admin_revoked', ip: req.ip, userId: req.user.id, detail: `@${user.alias}` });
+    return res.json({ ok: true, alias: user.alias, admin });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'No se pudo cambiar el admin.' });
   }
 });
 
@@ -572,11 +624,11 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
     const user = await db.get('SELECT id, alias, real_name, real_name_changed_at, alias_changed_at, bio, avatar_photo_id, cover_photo_id, rank, verified, disabled, created_at FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
     // Cuenta inhabilitada por el dueño: desaparece de la vista de
-    // los demás (como si no existiera). Solo el dueño la sigue
+    // los demás (como si no existiera). Solo un admin la sigue
     // viendo, para poder habilitarla de nuevo.
     const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
-    const viewerIsOwner = req.user && isAdminUser(req.user);
-    if (isDisabled && !viewerIsOwner) return res.status(404).json({ error: 'Ese usuario no existe.' });
+    const viewerIsAdmin = req.user && isAdminUser(req.user);
+    if (isDisabled && !viewerIsAdmin) return res.status(404).json({ error: 'Ese usuario no existe.' });
 
     // Señales sociales de la reputación: publicaciones visibles,
     // seguidores y contenidos quitados por moderación. (Robin Dark
@@ -644,7 +696,7 @@ router.get('/:alias/profile', optionalAuth, async (req, res) => {
       member_since: user.created_at,
       member_days: days,
       is_admin: isAdmin,
-      // Solo llega al dueño (los demás ven 404): marca la cuenta
+      // Solo llega a un admin (los demás ven 404): marca la cuenta
       // inhabilitada para que el botón diga «Habilitar cuenta».
       disabled: isDisabled,
       badge: badgeFor({ isAdmin, days, posts, rejected }),
@@ -674,8 +726,8 @@ router.get('/:alias/posts', optionalAuth, async (req, res) => {
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
     const user = await db.get('SELECT id, disabled FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
-    // Cuenta inhabilitada: sus publicaciones no se ven (solo el
-    // dueño las ve, para revisarlas).
+    // Cuenta inhabilitada: sus publicaciones no se ven (solo un
+    // admin las ve, para revisarlas).
     const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
     if (isDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Ese usuario no existe.' });
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
@@ -722,7 +774,7 @@ async function followList(req, res, direction) {
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
     const user = await db.get('SELECT id, disabled FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
-    // Cuenta inhabilitada: sus listas no se ven (solo el dueño).
+    // Cuenta inhabilitada: sus listas no se ven (solo un admin).
     const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
     if (isDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const limit = parseLimit(req);
@@ -762,8 +814,8 @@ router.get('/:alias/friends', optionalAuth, async (req, res) => {
     if (!ALIAS_RE.test(alias)) return res.status(400).json({ error: 'Alias no válido.' });
     const user = await db.get('SELECT id, disabled FROM users WHERE alias = $1', [alias]);
     if (!user) return res.status(404).json({ error: 'Ese usuario no existe.' });
-    // Cuenta inhabilitada: su lista de amigos no se ve (solo el
-    // dueño) y las cuentas inhabilitadas no salen en la lista.
+    // Cuenta inhabilitada: su lista de amigos no se ve (solo un
+    // admin) y las cuentas inhabilitadas no salen en la lista.
     const isDisabled = user.disabled === true || user.disabled === 1 || user.disabled === '1';
     if (isDisabled && !(req.user && isAdminUser(req.user))) return res.status(404).json({ error: 'Ese usuario no existe.' });
     const limit = parseLimit(req);

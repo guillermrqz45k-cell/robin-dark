@@ -64,7 +64,7 @@ const {
 const { requireAuth } = require('../middleware/auth');
 const { authLimiter, recoveryLimiter } = require('../middleware/rateLimit');
 const { requireObjectBody } = require('../middleware/validate');
-const { isAdminAlias, isAdminUser, effectiveVerified } = require('../reputation');
+const { isAdminUser, isOwner, effectiveVerified } = require('../reputation');
 const mail = require('../mail');
 const security = require('../security');
 
@@ -113,6 +113,10 @@ function presentUser(user) {
     email: user.email || null,
     email_verified: isVerifiedFlag(user.email_verified),
     is_admin: isAdminUser(user),
+    // is_owner: si es el dueño (alias ADMIN_ALIAS). El cliente lo
+    // usa para mostrar lo que solo el dueño puede hacer (por
+    // ejemplo, dar o quitar el admin desde un perfil).
+    is_owner: isOwner(user),
     verified: effectiveVerified({ verified: user.verified, alias: user.alias, rank: user.rank }),
   };
 }
@@ -170,9 +174,12 @@ router.post('/register', authLimiter, requireObjectBody, async (req, res) => {
     }
 
     const passwordHash = await hashPassword(password);
-    // El dueño nace con rango 'admin' para que siga siéndolo
-    // aunque cambie su @usuario después (el rango vive en su fila).
-    const rank = isAdminAlias(alias) ? 'admin' : 'new';
+    // Nadie nace admin: el rango al registrarse es siempre 'new'.
+    // El rango 'admin' solo lo da el dueño desde el perfil (POST
+    // /api/users/:alias/admin). Antes, registrarse con el alias
+    // de ADMIN_ALIAS daba admin solo: ese hueco se cerró
+    // (2026-11-20, decisión de AMO).
+    const rank = 'new';
     const created = await db.query(
       'INSERT INTO users (alias, password_hash, email, real_name, rank) VALUES ($1, $2, $3, $4, $5) RETURNING id, alias, real_name, email, email_verified, rank, verified',
       [alias, passwordHash, email, realName, rank],
