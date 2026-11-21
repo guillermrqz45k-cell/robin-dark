@@ -25,6 +25,45 @@ const STORY_STYLES = {
   uva: 'linear-gradient(135deg,#7c3aed,#4c1d95)',
 };
 
+// Iconos SVG de la interfaz (trazo, currentColor, 24px): el emoji
+// queda solo dentro del contenido del usuario (sentimientos,
+// textos), nunca como icono de interfaz.
+const ICON_PATHS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/><path d="M16 4.6a3 3 0 0 1 0 5.9"/><path d="M16.5 15.3c2.4.5 4.2 2 5 4.7"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h13l-2.5 4L18 12H5"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+  play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l6 3.5-6 3.5z" fill="currentColor" stroke="none"/>',
+  gamepad: '<rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="16" cy="11.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="18.5" cy="14" r="1.1" fill="currentColor" stroke="none"/>',
+  ghost: '<path d="M12 3a7 7 0 0 0-7 7v10l2.3-1.7 2.4 1.7 2.3-1.7 2.3 1.7 2.4-1.7L19 20V10a7 7 0 0 0-7-7z"/><circle cx="9.5" cy="10" r="1.3" fill="currentColor" stroke="none"/><circle cx="14.5" cy="10" r="1.3" fill="currentColor" stroke="none"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  bell: '<path d="M18 9a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 15 18 9"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/>',
+  thumb: '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>',
+  heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+  wow: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1.2" fill="currentColor" stroke="none"/><ellipse cx="12" cy="15.5" rx="2.2" ry="3"/>',
+  comment: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+  share: '<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>',
+  star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
+  ban: '<circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/>',
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  fire: '<path d="M12 2c1 3-2 4.5-2 7 0 1.5 1 2.5 2 2.5S14 10.5 14 9c2 1.5 3 3.5 3 5.5A5 5 0 0 1 7 14.5C7 9 10 6 12 2z"/>',
+  smile: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1.2" fill="currentColor" stroke="none"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"/>',
+};
+function ico(name) {
+  const inner = ICON_PATHS[name] || '';
+  return `<svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+}
+
 let me = null; // usuario actual ({id, alias, email, is_admin, verified, ...})
 let token = localStorage.getItem('rd_token') || null;
 let currentView = 'inicio';
@@ -72,7 +111,22 @@ async function api(path, opts) {
   });
   let data = {};
   try { data = await res.json(); } catch (e) { /* sin cuerpo */ }
-  if (res.status === 401) { logout(true); }
+  // 401: la sesión caducó o el token ya no vale. Solo se actúa
+  // en el endpoint crítico de autenticación (/api/users/me): el
+  // login devuelve 401 por credenciales incorrectas, así que
+  // /api/auth/* no es señal de caducidad. Los sondeos
+  // (pollChat, refreshBadges) pasan noLogoutOn401 y nunca echan
+  // al usuario de la vista: el 401 se devuelve sin navegar.
+  // Al caducar de verdad se avisa y se abre el login, sin ir al
+  // inicio y sin perder la vista en la que estaba.
+  if (res.status === 401 && !(opts && opts.noLogoutOn401)) {
+    if (String(path || '').startsWith('/api/users/me')) {
+      saveSession(null, null);
+      stopPolling();
+      notice('Tu sesión caducó. Entra de nuevo para seguir.');
+      openAuthModal('login');
+    }
+  }
   // Cuenta inhabilitada de forma permanente por el dueño: si había
   // una sesión activa (token), se cierra y se le dice por qué. Si
   // no había sesión (el intento de entrar), el error lo muestra el
@@ -171,21 +225,45 @@ async function downscaleImage(file, maxSide = 1600) {
   }
 }
 
+// Último error de pickMedia, para que el cuadro que lo llama lo
+// muestre dentro del modal en vez de perder la foto en silencio.
+let lastPickError = '';
+
 async function pickMedia(file) {
   if (!file) return null;
-  const isImg = /^image\/(png|jpe?g)$/i.test(file.type);
+  const isHeic = /^image\/(heic|heif)$/i.test(file.type);
+  const isImg = /^image\/(png|jpe?g)$/i.test(file.type) || isHeic;
   const isVid = /^video\/(mp4|webm)$/i.test(file.type);
-  if (!isImg && !isVid) { notice('Solo se aceptan fotos JPG/PNG o vídeos MP4/WebM.'); return null; }
+  if (!isImg && !isVid) {
+    lastPickError = 'Solo se aceptan fotos JPG/PNG o vídeos MP4/WebM.';
+    notice(lastPickError);
+    return null;
+  }
+  // HEIC (fotos de iPhone): se intenta convertir a JPG con el
+  // navegador (Safari lo decodifica); si no se puede, se avisa
+  // claro en vez de perder la foto en silencio.
+  if (isHeic) {
+    const small = await downscaleImage(file);
+    if (small) { lastPickError = ''; return small; }
+    lastPickError = 'Esa foto es HEIC y este navegador no la pudo convertir a JPG. Usa una foto JPG o PNG.';
+    notice(lastPickError);
+    return null;
+  }
   const max = isImg ? MAX_PHOTO_MB : MAX_VIDEO_MB;
   // Las fotos del teléfono suelen pesar más de 5 MB: se achican
   // antes de subirlas para que entren en el límite y no se pierdan
   // sin aviso (antes se rechazaban y el guardado seguía sin la foto).
   if (isImg && file.size > 1024 * 1024) {
     const small = await downscaleImage(file);
-    if (small && small.data.length * 0.75 < file.size) return small;
+    if (small && small.data.length * 0.75 < file.size) { lastPickError = ''; return small; }
   }
-  if (file.size > max * 1024 * 1024) { notice(`El archivo es muy grande: máximo ${max} MB.`); return null; }
+  if (file.size > max * 1024 * 1024) {
+    lastPickError = `El archivo es muy grande: máximo ${max} MB.`;
+    notice(lastPickError);
+    return null;
+  }
   const data = await fileToBase64(file);
+  lastPickError = '';
   return { mime: file.type, data, kind: isImg ? 'image' : 'video' };
 }
 
@@ -282,7 +360,8 @@ function renderTopbar() {
   const av = $('#top-avatar-img');
   if (!av) return;
   if (me && me.avatar_url) av.innerHTML = `<img class="avatar avatar-sm" style="width:32px;height:32px" src="${esc(me.avatar_url)}" alt="">`;
-  else av.textContent = me ? esc(me.alias[0].toUpperCase()) : '👤';
+  else if (me) av.textContent = esc(me.alias[0].toUpperCase());
+  else av.innerHTML = ico('user');
 }
 
 function setBadge(id, n) {
@@ -294,7 +373,7 @@ function setBadge(id, n) {
 
 async function refreshBadges() {
   if (!me) { setBadge('#chat-badge', 0); setBadge('#chat-badge-mobile', 0); setBadge('#notif-badge', 0); return; }
-  const c = await api('/api/chat');
+  const c = await api('/api/chat', { noLogoutOn401: true });
   if (c.status === 200) {
     const unread = c.data.unread_total || 0;
     const badgeEl = $('#chat-badge');
@@ -304,7 +383,7 @@ async function refreshBadges() {
     }
     setBadge('#chat-badge-mobile', unread);
   }
-  const n = await api('/api/social/notifications');
+  const n = await api('/api/social/notifications', { noLogoutOn401: true });
   if (n.status === 200) setBadge('#notif-badge', n.data.unread || 0);
 }
 
@@ -326,9 +405,6 @@ $('#notif-all').addEventListener('click', () => { $('#notif-panel').hidden = tru
 $('#sugg-all').addEventListener('click', () => showView('amigos'));
 $('#groups-all').addEventListener('click', () => showView('grupos'));
 $('#trends-all').addEventListener('click', () => showView('explorar'));
-$('#premium-btn').addEventListener('click', () => {
-  notice('Robin Dark Premium es solo un aviso por ahora: no hay planes activos ni cobra nada.');
-});
 
 let searchTimer = null;
 $('#top-search-input').addEventListener('input', (e) => {
@@ -351,28 +427,42 @@ $('#top-search-results').addEventListener('click', (e) => {
   if (!b) return;
   $('#top-search-results').hidden = true;
   $('#top-search-input').value = '';
+  $('.topbar').classList.remove('search-open');
   openProfile(b.dataset.alias);
+});
+
+// En el teléfono el buscador es un icono: abre el buscador
+// desplegable bajo la barra superior.
+$('#top-search-toggle').addEventListener('click', () => {
+  const bar = $('.topbar');
+  bar.classList.toggle('search-open');
+  if (bar.classList.contains('search-open')) {
+    const input = $('#top-search-input');
+    if (input) input.focus();
+  }
+});
+$('#top-search-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') $('.topbar').classList.remove('search-open');
 });
 
 // ---------- Menú PC y navegación ----------
 
 const MENU = [
-  { key: 'inicio', label: 'Inicio', ico: '⌂', go: () => showView('inicio') },
-  { key: 'explorar', label: 'Explorar', ico: '🧭', go: () => showView('explorar') },
-  { key: 'amigos', label: 'Amigos', ico: '👥', go: () => showView('amigos') },
-  { key: 'grupos', label: 'Grupos', ico: '👥', go: () => showView('grupos') },
-  { key: 'paginas', label: 'Páginas', ico: '⚑', go: () => notice('Las páginas son parte del diseño nuevo de Robin Dark: todavía no hay páginas creadas. Cada miembro ya tiene su perfil personal con portada y foto.') },
-  { key: 'eventos', label: 'Eventos', ico: '📅', go: () => notice('Los eventos son parte del diseño nuevo de Robin Dark: todavía no hay eventos programados.') },
-  { key: 'guardados', label: 'Guardados', ico: '🔖', go: () => notice('Todavía no tienes nada guardado: Robin Dark aún no guarda publicaciones en una lista. Lo que sí queda guardado siempre es tu cuenta, tus publicaciones, tus historias, tus reels y tus mensajes.') },
-  { key: 'reels', label: 'Reels', ico: '▶️', go: () => showView('reels') },
-  { key: 'juegos', label: 'Juegos', ico: '🎮', go: () => notice('Los juegos son parte del diseño nuevo de Robin Dark: todavía no hay juegos dentro de la red social.') },
-  { key: 'ia', label: 'Asistente IA', ico: '👻', go: () => showView('ia') },
+  { key: 'inicio', label: 'Inicio', ico: 'home', go: () => showView('inicio') },
+  { key: 'explorar', label: 'Explorar', ico: 'compass', go: () => showView('explorar') },
+  { key: 'amigos', label: 'Amigos', ico: 'users', go: () => showView('amigos') },
+  { key: 'grupos', label: 'Grupos', ico: 'users', go: () => showView('grupos') },
+  { key: 'reels', label: 'Reels', ico: 'play', go: () => showView('reels') },
+  { key: 'ia', label: 'Asistente IA', ico: 'ghost', go: () => showView('ia') },
+  { key: 'notificaciones', label: 'Notificaciones', ico: 'bell', go: () => showView('notificaciones') },
 ];
 
 function renderMenu() {
   const nav = $('#pc-menu');
-  nav.innerHTML = MENU.map((m) => `<button type="button" class="menu-btn${currentView === m.key ? ' active' : ''}" data-menu="${m.key}"><span class="menu-chip">${m.ico}</span>${m.label}</button>`).join('');
+  nav.innerHTML = MENU.map((m) => `<button type="button" class="menu-btn${currentView === m.key ? ' active' : ''}" data-menu="${m.key}"><span class="menu-chip">${ico(m.ico)}</span>${m.label}</button>`).join('');
   $$('.bottom-btn[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === currentView));
+  const fab = $('#ia-fab');
+  if (fab) fab.classList.toggle('active', currentView === 'ia');
 }
 $('#pc-menu').addEventListener('click', (e) => {
   const b = e.target.closest('[data-menu]');
@@ -386,6 +476,10 @@ $('#bottom-create').addEventListener('click', () => {
   showView('inicio');
   setTimeout(() => { const t = $('#composer-text'); if (t) t.focus(); }, 50);
 });
+// Botón flotante de la asistente en el teléfono: la única
+// entrada a la IA en móvil (el menú lateral es una fila de chips
+// y el bottomnav no tiene IA).
+$('#ia-fab').addEventListener('click', () => showView('ia'));
 
 const VIEWS = ['inicio', 'explorar', 'grupos', 'mensajes', 'perfil', 'amigos', 'reels', 'ia', 'notificaciones'];
 function showView(name) {
@@ -420,14 +514,14 @@ function stopPolling() {
 
 async function pollChat() {
   if (!me) return;
-  const c = await api('/api/chat');
+  const c = await api('/api/chat', { noLogoutOn401: true });
   if (c.status === 200) {
     setBadge('#chat-badge', c.data.unread_total || 0);
     setBadge('#chat-badge-mobile', c.data.unread_total || 0);
     if (currentView === 'mensajes' && !chatThreadId) renderThreadList(c.data.threads || []);
   }
   if (currentView === 'mensajes' && chatThreadId) {
-    const r = await api(`/api/chat/${chatThreadId}/messages`);
+    const r = await api(`/api/chat/${chatThreadId}/messages`, { noLogoutOn401: true });
     if (r.status === 200) renderChatMessages(r.data.messages || [], false);
   }
 }
@@ -446,14 +540,14 @@ async function renderInicio() {
     </div></div>
     <div class="card" id="composer-card">
       <div class="composer">
-        ${me ? avatarHtml(me) : '<span class="avatar avatar-fallback">👤</span>'}
+        ${me ? avatarHtml(me) : `<span class="avatar avatar-fallback">${ico('user')}</span>`}
         <textarea id="composer-text" rows="2" placeholder="¿Qué estás pensando${me ? ', ' + esc(me.alias) : ''}?" aria-label="Escribe una publicación"></textarea>
       </div>
       <div id="composer-preview" class="photo-preview" hidden></div>
       <div class="composer-actions">
-        <label class="action-btn" for="composer-photo">🖼️ Foto/video</label>
+        <label class="action-btn" for="composer-photo">${ico('image')} Foto/video</label>
         <input id="composer-photo" type="file" accept="image/png,image/jpeg,video/mp4,video/webm" hidden>
-        <button type="button" class="action-btn" id="composer-feeling-btn">😊 Sentimiento/actividad</button>
+        <button type="button" class="action-btn" id="composer-feeling-btn">${ico('smile')} Sentimiento/actividad</button>
         <button type="button" class="cta" id="composer-publish" style="margin-left:auto">Publicar</button>
       </div>
       <div id="composer-feelings" class="feeling-picker" hidden></div>
@@ -528,7 +622,7 @@ async function renderStoriesRow() {
     const first = g.stories[0] || {};
     const media = first.media_url;
     const inner = media
-      ? (first.media_type === 'video' ? `<span class="story-ring"><span style="font-size:22px">▶️</span></span>` : `<span class="story-ring"><img src="${esc(media)}" alt=""></span>`)
+      ? (first.media_type === 'video' ? `<span class="story-ring story-video-ring">${ico('play')}</span>` : `<span class="story-ring"><img src="${esc(media)}" alt=""></span>`)
       : `<span class="story-ring" style="background:${STORY_STYLES[first.style_key] || STORY_STYLES.oro}">${esc((g.author.alias || '?')[0].toUpperCase())}</span>`;
     return `<button type="button" class="story-circle" data-story-group="${gi}">${inner}<span class="muted small">${esc(g.author.alias)}</span></button>`;
   }).join('');
@@ -558,8 +652,8 @@ function reelCard(s) {
     ? (s.media_type === 'video' ? `<video src="${esc(s.media_url)}" muted playsinline preload="metadata"></video>` : `<img src="${esc(s.media_url)}" alt="">`)
     : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:15px;font-weight:700;padding:12px;text-align:center">${esc(s.text || '')}</div>`;
   return `<div class="reel-card" data-id="${s.id}" data-author="${esc(s.author ? s.author.alias : '')}" data-text="${esc(s.text || '')}" data-media="${esc(s.media_url || '')}" data-mtype="${esc(s.media_type || '')}">
-    ${media}<span class="reel-play">▶</span>
-    <div class="reel-info"><span class="reel-text">${esc(s.text || '')}</span><span class="reel-meta">♥ ${s.likes_count || 0} · ${esc(s.author ? s.author.alias : '')}</span></div>
+    ${media}<span class="reel-play">${ico('play')}</span>
+    <div class="reel-info"><span class="reel-text">${esc(s.text || '')}</span><span class="reel-meta">${ico('heart')} ${s.likes_count || 0} · ${esc(s.author ? s.author.alias : '')}</span></div>
   </div>`;
 }
 
@@ -591,16 +685,16 @@ function postCard(p) {
     </div>${me && me.id === p.author.id ? `<button type="button" class="link-btn" data-delete-post="${p.id}">Borrar</button>` : ''}</div>
     ${p.text ? `<p class="post-text">${linkify(p.text)}</p>` : ''}
     ${media}
-    <div class="post-counts"><button type="button" class="link-btn" data-reactors="${p.id}">👍 ${p.reactions ? p.reactions.like || 0 : 0} · ❤️ ${p.reactions ? p.reactions.love || 0 : 0} · 😮 ${p.reactions ? p.reactions.wow || 0 : 0}</button><span>💬 ${p.comments_count || 0} comentarios</span><span>↗️ ${p.shares || 0} veces compartido</span></div>
+    <div class="post-counts"><button type="button" class="link-btn" data-reactors="${p.id}">${ico('thumb')} ${p.reactions ? p.reactions.like || 0 : 0} · ${ico('heart')} ${p.reactions ? p.reactions.love || 0 : 0} · ${ico('wow')} ${p.reactions ? p.reactions.wow || 0 : 0}</button><span>${ico('comment')} ${p.comments_count || 0} comentarios</span><span>${ico('share')} ${p.shares || 0} veces compartido</span></div>
     <div class="post-actions">
-      <button type="button" class="action-btn${p.my_reaction ? ' active' : ''}" data-like-post="${p.id}">${p.my_reaction === 'love' ? '❤️ Me encanta' : p.my_reaction === 'wow' ? '😮 Me asombra' : p.my_reaction ? '👍 Me gusta' : '👍 Me gusta'}</button>
-      <button type="button" class="action-btn" data-comments-post="${p.id}">💬 Comentar</button>
-      <span class="share-wrap"><button type="button" class="action-btn" data-share-post="${p.id}">↗️ Compartir</button></span>
+      <button type="button" class="action-btn${p.my_reaction ? ' active' : ''}" data-like-post="${p.id}">${p.my_reaction === 'love' ? `${ico('heart')} Me encanta` : p.my_reaction === 'wow' ? `${ico('wow')} Me asombra` : `${ico('thumb')} Me gusta`}</button>
+      <button type="button" class="action-btn" data-comments-post="${p.id}">${ico('comment')} Comentar</button>
+      <span class="share-wrap"><button type="button" class="action-btn" data-share-post="${p.id}">${ico('share')} Compartir</button></span>
     </div>
     <div class="reaction-pop" data-reaction-pop="${p.id}" hidden>
-      <button type="button" data-react="${p.id}|like" aria-label="Me gusta">👍</button>
-      <button type="button" data-react="${p.id}|love" aria-label="Me encanta">❤️</button>
-      <button type="button" data-react="${p.id}|wow" aria-label="Me asombra">😮</button>
+      <button type="button" class="react-btn react-like${p.my_reaction === 'like' ? ' active' : ''}" data-react="${p.id}|like" aria-label="Me gusta">${ico('thumb')}</button>
+      <button type="button" class="react-btn react-love${p.my_reaction === 'love' ? ' active' : ''}" data-react="${p.id}|love" aria-label="Me encanta">${ico('heart')}</button>
+      <button type="button" class="react-btn react-wow${p.my_reaction === 'wow' ? ' active' : ''}" data-react="${p.id}|wow" aria-label="Me asombra">${ico('wow')}</button>
     </div>
     <div data-comments="${p.id}"></div>
   </article>`;
@@ -637,7 +731,7 @@ async function openReactors(postId) {
   const r = await api(`/api/social/posts/${postId}/reactions`);
   if (r.status !== 200) { notice(r.data.error || 'No se pudo ver quién reaccionó.'); return; }
   const list = r.data.reactions || [];
-  const groups = [['like', '👍 Me gusta'], ['love', '❤️ Me encanta'], ['wow', '😮 Me asombra']];
+  const groups = [['like', `${ico('thumb')} Me gusta`], ['love', `${ico('heart')} Me encanta`], ['wow', `${ico('wow')} Me asombra`]];
   const body = list.length ? groups.map(([kind, label]) => {
     const users = list.filter((x) => x.kind === kind);
     if (!users.length) return '';
@@ -686,11 +780,11 @@ async function openShareMenu(postId, anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'share-menu';
   menu.innerHTML = `
-    <button type="button" data-share="story"><span>📖</span>Compartir en tu historia</button>
-    <button type="button" data-share="group"><span>👥</span>Compartir en un grupo</button>
-    <button type="button" data-share="friend"><span>✉️</span>Enviar a un amigo por mensaje</button>
-    <button type="button" data-share="copy"><span>🔗</span>Copiar enlace</button>
-    <button type="button" data-share="outside"><span>↗️</span>Compartir fuera de la app</button>`;
+    <button type="button" data-share="story"><span>${ico('book')}</span>Compartir en tu historia</button>
+    <button type="button" data-share="group"><span>${ico('users')}</span>Compartir en un grupo</button>
+    <button type="button" data-share="friend"><span>${ico('mail')}</span>Enviar a un amigo por mensaje</button>
+    <button type="button" data-share="copy"><span>${ico('link')}</span>Copiar enlace</button>
+    <button type="button" data-share="outside"><span>${ico('share')}</span>Compartir fuera de la app</button>`;
   wrap.appendChild(menu);
   shareMenuFor = postId;
   menu.addEventListener('click', async (e) => {
@@ -734,7 +828,7 @@ async function shareToGroup(postId) {
   if (!groups.length) { notice('Primero únete a un grupo para compartir ahí.'); showView('grupos'); return; }
   showModal(`<div class="modal-head"><h2>Compartir en un grupo</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Elige el grupo donde se publicará:</p>
-    ${groups.map((x) => `<button type="button" class="thread-row" data-share-group="${x.id}"><span class="group-ico">👥</span><span><strong>${esc(x.name)}</strong><br><span class="muted small">${x.member_count} miembros</span></span></button>`).join('')}`);
+    ${groups.map((x) => `<button type="button" class="thread-row" data-share-group="${x.id}"><span class="group-ico">${ico('users')}</span><span><strong>${esc(x.name)}</strong><br><span class="muted small">${x.member_count} miembros</span></span></button>`).join('')}`);
   $$('#modal [data-share-group]').forEach((b) => b.addEventListener('click', async () => {
     const body = { text: p.text || '' };
     if (p.photo_url) {
@@ -811,7 +905,7 @@ function openStoryModal() {
     <p class="muted">Las historias duran 24 horas. Puedes poner texto, foto o vídeo corto.</p>
     <textarea id="story-text" rows="3" placeholder="¿Qué quieres contar?" maxlength="500"></textarea>
     <div class="composer-actions">
-      <label class="action-btn" for="story-media">🖼️ Foto/video</label>
+      <label class="action-btn" for="story-media">${ico('image')} Foto/video</label>
       <input id="story-media" type="file" accept="image/png,image/jpeg,video/mp4,video/webm" hidden>
       <select id="story-style" aria-label="Estilo de la historia">
         <option value="oro">Oro</option><option value="noche">Noche</option><option value="bosque">Bosque</option><option value="fuego">Fuego</option><option value="uva">Uva</option>
@@ -865,7 +959,7 @@ function renderStoryViewer() {
     ${s.text && s.media_url ? `<p style="margin-top:10px">${linkify(s.text)}</p>` : ''}
     <div class="viewer-nav">
       <button type="button" class="ghost-btn" id="story-prev">← Anterior</button>
-      <button type="button" class="ghost-btn" id="story-like">♥ Me gusta</button>
+      <button type="button" class="ghost-btn" id="story-like">${ico('heart')} Me gusta</button>
       <button type="button" class="ghost-btn" id="story-next">Siguiente →</button>
     </div>
     <p class="muted small" style="margin-top:10px">Historia ${storyViewer.storyIdx + 1} de ${g.stories.length} · ${esc(g.author.alias)}</p>
@@ -895,7 +989,7 @@ async function renderAiRecs() {
   const r = await api('/api/ai/recommendations');
   const items = r.status === 200 ? (r.data.recommendations || []) : [];
   if (!items.length) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="card"><h3 style="margin:0 0 4px">👻 Para ti, de la asistente</h3><p class="muted small" style="margin:0 0 10px">Recomendaciones según a quién sigues y qué te gusta.</p>
+  el.innerHTML = `<div class="card"><h3 style="margin:0 0 4px">${ico('ghost')} Para ti, de la asistente</h3><p class="muted small" style="margin:0 0 10px">Recomendaciones según a quién sigues y qué te gusta.</p>
     ${items.slice(0, 3).map((it) => `<div class="comment"><div class="comment-body"><div>${esc(it.author_alias)} ${adminBadgeHtml(it.author_is_admin)}${verifiedHtml(it.author_verified)}</div><p>${linkify(it.text || '')}</p><p class="muted small">${esc(it.reason || '')}</p></div></div>`).join('')}</div>`;
 }
 
@@ -915,7 +1009,7 @@ async function loadRightbar() {
   }
   if (grp) {
     const r = await api('/api/social/groups');
-    if (r.status === 200) grp.innerHTML = (r.data.groups || []).slice(0, 4).map((g) => `<button type="button" class="thread-row" data-group="${g.id}"><span class="group-ico">👥</span><span><strong>${esc(g.name)}</strong><br><span class="muted small">${g.member_count} miembros</span></span></button>`).join('') || '<p class="muted small">Aún no hay grupos.</p>';
+    if (r.status === 200) grp.innerHTML = (r.data.groups || []).slice(0, 4).map((g) => `<button type="button" class="thread-row" data-group="${g.id}"><span class="group-ico">${ico('users')}</span><span><strong>${esc(g.name)}</strong><br><span class="muted small">${g.member_count} miembros</span></span></button>`).join('') || '<p class="muted small">Aún no hay grupos.</p>';
   }
   if (st) {
     const r = await api('/api/stats');
@@ -925,7 +1019,7 @@ async function loadRightbar() {
   if (shortcuts) {
     const r = await api('/api/social/groups?mine=1');
     if (r.status === 200 && (r.data.groups || []).length) {
-      shortcuts.innerHTML = r.data.groups.map((g) => `<button type="button" class="thread-row" data-group="${g.id}"><span class="group-ico">👥</span><span><strong>${esc(g.name)}</strong><br><span class="muted small">${g.member_count} miembros</span></span></button>`).join('');
+      shortcuts.innerHTML = r.data.groups.map((g) => `<button type="button" class="thread-row" data-group="${g.id}"><span class="group-ico">${ico('users')}</span><span><strong>${esc(g.name)}</strong><br><span class="muted small">${g.member_count} miembros</span></span></button>`).join('');
     } else shortcuts.innerHTML = '<p class="muted small">Entra para ver tus grupos.</p>';
   }
   $$('#suggested-users [data-alias], #trending-tags [data-hashtag]').forEach((b) => {
@@ -939,10 +1033,10 @@ async function loadRightbar() {
 
 async function renderExplorar() {
   const el = $('#view-explorar');
-  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">🧭 Explorar</h2>
+  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">${ico('compass')} Explorar</h2>
     <input id="explore-search" type="search" placeholder="Buscar personas por alias…" aria-label="Buscar personas" autocomplete="off">
     <div id="explore-results" style="margin-top:10px"></div></div>
-    <div class="card"><h3 style="margin:0 0 10px">🔥 Tendencias</h3><div id="explore-trends"><p class="muted">Cargando…</p></div></div>
+    <div class="card"><h3 style="margin:0 0 10px">${ico('fire')} Tendencias</h3><div id="explore-trends"><p class="muted">Cargando…</p></div></div>
     <div class="card"><h3 style="margin:0 0 10px">Personas que podrías conocer</h3><div id="explore-suggested"><p class="muted">Cargando…</p></div></div>
     <div id="explore-posts"></div>`;
   let timer = null;
@@ -990,7 +1084,7 @@ function bindFollowButtons(root) {
 async function renderGrupos() {
   const el = $('#view-grupos');
   if (groupDetailId) { await renderGroupDetail(); return; }
-  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">👥 Grupos</h2>
+  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">${ico('users')} Grupos</h2>
     <p class="muted">Crea tu grupo o únete a los que hay. El número de miembros es real.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="group-name" placeholder="Nombre del grupo" maxlength="80" style="flex:1;min-width:180px"><input id="group-desc" placeholder="Descripción (opcional)" maxlength="500" style="flex:2;min-width:180px"><button type="button" class="cta" id="group-create">Crear grupo</button></div></div>
     <div id="groups-list"><p class="muted">Cargando grupos…</p></div>`;
@@ -1007,7 +1101,7 @@ async function renderGrupos() {
   if (r.status !== 200) { $('#groups-list').innerHTML = '<p class="muted">No se pudieron cargar los grupos.</p>'; return; }
   const groups = r.data.groups || [];
   $('#groups-list').innerHTML = groups.length
-    ? groups.map((g) => `<div class="card group-card"><span class="group-ico">👥</span><div style="flex:1"><h4>${esc(g.name)}</h4><p class="muted">${esc(g.description || '')}</p><p class="muted small">Creado por ${esc(g.creator.alias)} · ${g.member_count} miembros</p></div><button type="button" class="ghost-btn" data-group-open="${g.id}">Ver grupo</button>${g.is_member ? `<button type="button" class="ghost-btn" data-group-leave="${g.id}">Salir</button>` : `<button type="button" class="cta" data-group-join="${g.id}">Unirme</button>`}</div>`).join('')
+    ? groups.map((g) => `<div class="card group-card"><span class="group-ico">${ico('users')}</span><div style="flex:1"><h4>${esc(g.name)}</h4><p class="muted">${esc(g.description || '')}</p><p class="muted small">Creado por ${esc(g.creator.alias)} · ${g.member_count} miembros</p></div><button type="button" class="ghost-btn" data-group-open="${g.id}">Ver grupo</button>${g.is_member ? `<button type="button" class="ghost-btn" data-group-leave="${g.id}">Salir</button>` : `<button type="button" class="cta" data-group-join="${g.id}">Unirme</button>`}</div>`).join('')
     : '<div class="empty"><h3>Aún no hay grupos</h3><p class="muted">Crea el primero con el formulario de arriba.</p></div>';
   $$('#groups-list [data-group-open]').forEach((b) => b.addEventListener('click', () => { groupDetailId = Number(b.dataset.groupOpen); renderGrupos(); }));
   $$('#groups-list [data-group-join]').forEach((b) => b.addEventListener('click', async () => {
@@ -1032,14 +1126,14 @@ async function renderGroupDetail() {
   const wall = await api(`/api/social/groups/${groupDetailId}/posts`);
   const wallPosts = wall.status === 200 ? (wall.data.posts || []) : [];
   el.innerHTML = `<button type="button" class="link-btn" id="group-back">← Todos los grupos</button>
-    <div class="card"><div class="group-card"><span class="group-ico">👥</span><div style="flex:1"><h2 style="margin:0">${esc(g.name)}</h2><p class="muted">${esc(g.description || '')}</p><p class="muted small">Creado por ${esc(g.creator.alias)} · ${g.member_count} miembros</p></div>
+    <div class="card"><div class="group-card"><span class="group-ico">${ico('users')}</span><div style="flex:1"><h2 style="margin:0">${esc(g.name)}</h2><p class="muted">${esc(g.description || '')}</p><p class="muted small">Creado por ${esc(g.creator.alias)} · ${g.member_count} miembros</p></div>
     ${g.is_member ? `<button type="button" class="ghost-btn" id="group-leave">Salir del grupo</button>` : `<button type="button" class="cta" id="group-join">Unirme</button>`}
     ${g.is_creator ? `<button type="button" class="danger-btn" id="group-delete">Borrar grupo</button>` : ''}</div></div>
     <div class="card"><h3 style="margin:0 0 10px">Miembros (${members.length})</h3>
       ${members.map((m) => `<div class="friend-row">${avatarHtml(m, 'sm')}<div style="flex:1"><button type="button" class="friend-name" data-alias="${esc(m.alias)}">${esc(m.alias)}</button> ${adminBadgeHtml(m.is_admin)}${verifiedHtml(m.verified)}</div></div>`).join('') || '<p class="muted">Sin miembros.</p>'}</div>
     <div class="card"><h3 style="margin:0 0 10px">Muro del grupo</h3>
       ${g.is_member ? `<div class="composer"><textarea id="wall-text" rows="2" placeholder="Escribe algo en el muro del grupo…" maxlength="2000"></textarea></div>
-      <div class="composer-actions"><label class="action-btn" for="wall-photo">🖼️ Foto</label><input id="wall-photo" type="file" accept="image/png,image/jpeg" hidden><button type="button" class="cta" id="wall-publish" style="margin-left:auto">Publicar en el muro</button></div>
+      <div class="composer-actions"><label class="action-btn" for="wall-photo">${ico('image')} Foto</label><input id="wall-photo" type="file" accept="image/png,image/jpeg" hidden><button type="button" class="cta" id="wall-publish" style="margin-left:auto">Publicar en el muro</button></div>
       <div id="wall-preview" class="photo-preview" hidden></div>` : '<p class="muted">Únete al grupo para publicar en su muro.</p>'}
       <div id="wall-list" style="margin-top:14px">${wallPosts.length ? wallPosts.map((p) => `<article class="post" data-wall-post="${p.id}" style="border-top:1px solid var(--border);padding-top:12px"><div class="post-head">${avatarHtml(p.author, 'sm')}<div style="flex:1"><div>${authorLine(p.author)}</div><div class="post-time">${timeAgo(p.created_at)}</div></div>${(me && (me.id === p.author.id || g.is_creator)) ? `<button type="button" class="link-btn" data-wall-delete="${p.id}">Borrar</button>` : ''}</div>${p.text ? `<p class="post-text">${linkify(p.text)}</p>` : ''}${p.photo_url ? `<img class="post-photo" src="${esc(p.photo_url)}" alt="Foto del muro">` : ''}</article>`).join('') : '<p class="muted">El muro está vacío: sé la primera persona en publicar.</p>'}</div></div>`;
   $('#group-back').addEventListener('click', () => { groupDetailId = null; renderGrupos(); });
@@ -1094,7 +1188,7 @@ async function renderGroupDetail() {
 
 async function renderReels() {
   const el = $('#view-reels');
-  el.innerHTML = `<div class="card"><h2 style="margin:0 0 6px">▶️ Reels</h2><p class="muted">Reels con foto o vídeo corto. Se quedan visibles, no caducan.</p>
+  el.innerHTML = `<div class="card"><h2 style="margin:0 0 6px">${ico('play')} Reels</h2><p class="muted">Reels con foto o vídeo corto. Se quedan visibles, no caducan.</p>
     <button type="button" class="cta" id="reel-create">Crear reel</button></div>
     <div id="reels-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px"><p class="muted">Cargando reels…</p></div>`;
   $('#reel-create').addEventListener('click', () => { if (requireLogin('crear un reel')) openReelModal(); });
@@ -1112,7 +1206,7 @@ function openReelModal() {
     <p class="muted">Un reel necesita foto o vídeo corto (MP4/WebM, hasta 20 MB). Se queda visible.</p>
     <textarea id="reel-text" rows="2" placeholder="¿De qué trata tu reel?" maxlength="500"></textarea>
     <div class="composer-actions">
-      <label class="action-btn" for="reel-media">🖼️ Foto/video</label>
+      <label class="action-btn" for="reel-media">${ico('image')} Foto/video</label>
       <input id="reel-media" type="file" accept="image/png,image/jpeg,video/mp4,video/webm" hidden>
       <button type="button" class="cta" id="reel-publish" style="margin-left:auto">Publicar reel</button>
     </div>
@@ -1145,7 +1239,7 @@ async function renderAmigos() {
     $('#amigos-login').addEventListener('click', openAuthModal);
     return;
   }
-  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">👥 Amigos</h2>
+  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">${ico('users')} Amigos</h2>
     <div class="tabs">
       <button type="button" class="pill active" data-amigos-tab="amigos">Amigos</button>
       <button type="button" class="pill" data-amigos-tab="seguidores">Seguidores</button>
@@ -1187,7 +1281,7 @@ async function renderMensajes() {
     $('#mensajes-login').addEventListener('click', openAuthModal);
     return;
   }
-  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">✉️ Mensajes</h2><button type="button" class="cta" id="new-message">✉️ Nuevo mensaje</button></div>
+  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${ico('mail')} Mensajes</h2><button type="button" class="cta" id="new-message">${ico('mail')} Nuevo mensaje</button></div>
     <div id="thread-list" style="margin-top:10px"><p class="muted">Cargando hilos…</p></div></div>
     <div id="chat-view"></div>`;
   $('#new-message').addEventListener('click', openNewMessageModal);
@@ -1208,19 +1302,29 @@ function renderThreadList(threads) {
 }
 
 function openNewMessageModal() {
-  showModal(`<div class="modal-head"><h2>✉️ Nuevo mensaje</h2><button type="button" class="close-btn">✕</button></div>
+  showModal(`<div class="modal-head"><h2>${ico('mail')} Nuevo mensaje</h2><button type="button" class="close-btn">✕</button></div>
     <p class="muted">Busca a un miembro y empieza a hablarle:</p>
     <input id="newmsg-search" type="search" placeholder="Buscar por alias…" autocomplete="off">
-    <div id="newmsg-results" style="margin-top:10px"><p class="muted">Escribe al menos 2 letras.</p></div>`);
+    <div id="newmsg-results" class="newmsg-results" style="margin-top:10px"><p class="muted">Escribe al menos 2 letras.</p></div>`);
   let timer = null;
   $('#newmsg-search').addEventListener('input', (e) => {
     clearTimeout(timer);
     const q = e.target.value.trim();
     if (q.length < 2) { $('#newmsg-results').innerHTML = '<p class="muted">Escribe al menos 2 letras.</p>'; return; }
+    $('#newmsg-results').innerHTML = '<p class="muted">Buscando…</p>';
     timer = setTimeout(async () => {
       const r = await api(`/api/users?search=${encodeURIComponent(q)}`);
-      if (r.status !== 200) return;
-      $('#newmsg-results').innerHTML = r.data.users.map((u) => `<button type="button" class="thread-row" data-newmsg="${u.id}" data-alias="${esc(u.alias)}">${avatarHtml(u, 'sm')}<span><strong>${esc(u.alias)}</strong> ${adminBadgeHtml(u.is_admin)}${verifiedHtml(u.verified)}</span></button>`).join('') || '<p class="muted">Sin resultados.</p>';
+      if (r.status !== 200) { $('#newmsg-results').innerHTML = '<p class="muted">No se pudo buscar. Inténtalo de nuevo.</p>'; return; }
+      $('#newmsg-results').innerHTML = r.data.users.map((u) => {
+        // La sub-línea muestra los contadores cuando el servidor
+        // los devuelve; si no vienen, no se inventa un 0.
+        const subs = [];
+        if (typeof u.followers_count === 'number') subs.push(`${u.followers_count} seguidores`);
+        if (typeof u.mutual_follows === 'number' && u.mutual_follows > 0) subs.push(`${u.mutual_follows} amigos en común`);
+        const sub = subs.length ? `<div class="friend-sub">${subs.join(' · ')}</div>` : '';
+        return `<div class="newmsg-row">${avatarHtml(u)}<div style="flex:1;min-width:0"><button type="button" class="friend-name" data-alias="${esc(u.alias)}">${esc(u.alias)}</button> ${adminBadgeHtml(u.is_admin)}${verifiedHtml(u.verified)}${sub}</div><button type="button" class="cta newmsg-btn" data-newmsg="${u.id}" data-alias="${esc(u.alias)}">${ico('mail')} Mensaje</button></div>`;
+      }).join('') || '<p class="muted">Sin resultados.</p>';
+      $$('#newmsg-results [data-alias]').forEach((b) => b.addEventListener('click', () => { closeModal(); openProfile(b.dataset.alias); }));
       $$('#newmsg-results [data-newmsg]').forEach((b) => b.addEventListener('click', async () => {
         closeModal();
         const t = await api('/api/chat', { method: 'POST', body: JSON.stringify({ user_id: Number(b.dataset.newmsg) }) });
@@ -1237,7 +1341,7 @@ async function openChat(threadId, otherAlias, keepInput) {
   chatOtherAlias = otherAlias || chatOtherAlias;
   const view = $('#chat-view');
   if (!view) return;
-  view.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">💬 ${esc(chatOtherAlias || 'Chat')}</h3><button type="button" class="link-btn" id="chat-close">Cerrar</button></div>
+  view.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">${ico('comment')} ${esc(chatOtherAlias || 'Chat')}</h3><button type="button" class="link-btn" id="chat-close">Cerrar</button></div>
     <div id="chat-box" class="chat-box" style="margin-top:12px;max-height:50vh;overflow-y:auto"></div>
     <form id="chat-form" class="chat-input-row"><input id="chat-input" placeholder="Escribe un mensaje…" maxlength="2000" autocomplete="off" aria-label="Escribe un mensaje"><button type="submit" class="cta">Enviar</button></form></div>`;
   $('#chat-close').addEventListener('click', () => { chatThreadId = null; chatOtherAlias = null; view.innerHTML = ''; });
@@ -1283,21 +1387,21 @@ async function renderPerfil() {
   const isOwn = me && me.alias === p.alias;
   const coverStyle = p.cover_url ? `background-image:url('${esc(p.cover_url)}')` : '';
   el.innerHTML = `<div class="card${p.seniority === 'antiguo' ? ' profile-antiguo' : ''}" style="padding:0;overflow:hidden">
-    <div class="profile-cover" style="${coverStyle}"></div>
+    <div class="profile-cover" style="${coverStyle}">${isOwn ? `<button type="button" class="cover-change-btn" id="profile-cover-change">${ico('camera')} Cambiar portada</button><input id="profile-cover-file" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>` : ''}</div>
     <div style="padding:0 16px 16px">
       <div class="profile-head">
-        ${avatarHtml({ alias: p.alias, avatar_url: p.avatar_url }, 'lg')}
+        <span class="profile-avatar-wrap">${avatarHtml({ alias: p.alias, avatar_url: p.avatar_url }, 'lg')}${isOwn ? `<button type="button" class="avatar-cam-btn" id="profile-avatar-change" aria-label="Cambiar foto de perfil">${ico('camera')}</button><input id="profile-avatar-file" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>` : ''}</span>
         <div style="flex:1;min-width:200px"><h1 class="profile-name">${esc(p.real_name || p.alias)} ${adminBadgeHtml(p.is_admin)}${verifiedHtml(p.verified)}</h1>
         <div class="muted small">@${esc(p.alias)}</div>
-        <div style="margin-top:4px">${badgeHtml(p.badge)}${p.seniority === 'antiguo' ? ' <span class="badge-antiguo">★ Antiguo</span>' : ''}${p.seniority === 'nuevo' ? ' <span class="seniority-tag">Perfil nuevo</span>' : ''}${p.disabled ? ' <span class="disabled-badge">🚫 Cuenta inhabilitada</span>' : ''}</div>
-        <div class="profile-stats"><span><strong>${p.posts_count || 0}</strong> publicaciones</span><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.followers_count || 0}</strong> seguidores</button><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.following_count || 0}</strong> seguidos</button><span><strong>${p.ratings_count || 0}</strong> valoraciones</span><span>⭐ ${p.avg_stars === null || p.avg_stars === undefined ? '—' : p.avg_stars}</span></div></div>
+        <div style="margin-top:4px">${badgeHtml(p.badge)}${p.seniority === 'antiguo' ? ' <span class="badge-antiguo">★ Antiguo</span>' : ''}${p.seniority === 'nuevo' ? ' <span class="seniority-tag">Perfil nuevo</span>' : ''}${p.disabled ? ` <span class="disabled-badge">${ico('ban')} Cuenta inhabilitada</span>` : ''}</div>
+        <div class="profile-stats"><span><strong>${p.posts_count || 0}</strong> publicaciones</span><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.followers_count || 0}</strong> seguidores</button><button type="button" class="link-btn" data-stat-tab="amigos"><strong>${p.following_count || 0}</strong> seguidos</button><span><strong>${p.ratings_count || 0}</strong> valoraciones</span><span>${ico('star')} ${p.avg_stars === null || p.avg_stars === undefined ? '—' : p.avg_stars}</span></div></div>
       </div>
       ${p.bio ? `<p style="margin:12px 0 0">${linkify(p.bio)}</p>` : ''}
       <div class="profile-actions">
         ${isOwn ? `<button type="button" class="cta" id="profile-edit">Editar perfil</button><button type="button" class="ghost-btn" id="profile-logout">Cerrar sesión</button>`
-          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">✉️ Mensaje</button>${me && me.is_admin ? `${p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">✓ Dar verificado</button>`}${p.disabled ? `<button type="button" class="cta" id="profile-disable">Habilitar cuenta</button>` : `<button type="button" class="danger-btn" id="profile-disable">🚫 Inhabilitar cuenta</button>`}` : ''}${me && me.is_owner ? `${p.is_admin ? `<button type="button" class="danger-btn" id="profile-admin">Quitar admin</button>` : `<button type="button" class="cta" id="profile-admin">⭐ Hacer admin</button>`}` : ''}`}
+          : `<button type="button" class="cta" id="profile-follow">${p.is_following ? 'Siguiendo ✓' : 'Seguir'}</button><button type="button" class="ghost-btn" id="profile-message">${ico('mail')} Mensaje</button>${me && me.is_admin ? `${p.verified ? `<button type="button" class="danger-btn" id="profile-verify">Quitar verificado</button>` : `<button type="button" class="cta" id="profile-verify">${ico('check')} Dar verificado</button>`}${p.disabled ? `<button type="button" class="cta" id="profile-disable">Habilitar cuenta</button>` : `<button type="button" class="danger-btn" id="profile-disable">${ico('ban')} Inhabilitar cuenta</button>`}` : ''}${me && me.is_owner ? `${p.is_admin ? `<button type="button" class="danger-btn" id="profile-admin">Quitar admin</button>` : `<button type="button" class="cta" id="profile-admin">${ico('star')} Hacer admin</button>`}` : ''}`}
       </div>
-      ${p.is_friend ? `<p class="muted small">👥 Son amigos (se siguen mutuamente) · ${p.mutual_follows || 0} amigos en común</p>` : ''}
+      ${p.is_friend ? `<p class="muted small">${ico('users')} Son amigos (se siguen mutuamente) · ${p.mutual_follows || 0} amigos en común</p>` : ''}
       <div class="tabs">
         <button type="button" class="pill${profileTab === 'publicaciones' ? ' active' : ''}" data-ptab="publicaciones">Publicaciones</button>
         <button type="button" class="pill${profileTab === 'informacion' ? ' active' : ''}" data-ptab="informacion">Información</button>
@@ -1312,6 +1416,31 @@ async function renderPerfil() {
   if (editBtn) editBtn.addEventListener('click', openEditProfileModal);
   const logoutBtn = $('#profile-logout');
   if (logoutBtn) logoutBtn.addEventListener('click', () => logout());
+  // Cambiar la foto de perfil o de portada sin pasar por «Editar
+  // perfil»: el botón de cámara sobre el avatar y el de la
+  // portada suben la foto directamente (y se publica sola, como
+  // al cambiarla desde el modal). Si la foto no se puede usar,
+  // se avisa y no se guarda nada.
+  const avChangeBtn = $('#profile-avatar-change');
+  if (avChangeBtn) avChangeBtn.addEventListener('click', () => $('#profile-avatar-file').click());
+  const avFile = $('#profile-avatar-file');
+  if (avFile) avFile.addEventListener('change', async (e) => {
+    const m = await pickMedia(e.target.files[0]);
+    if (!m || m.kind !== 'image') { notice(m ? 'La foto de perfil debe ser JPG/PNG.' : (lastPickError || 'No se pudo usar esa foto.')); e.target.value = ''; return; }
+    const rr = await api('/api/users/me/profile', { method: 'PATCH', body: JSON.stringify({ avatar: { mime: m.mime, data: m.data } }) });
+    if (rr.status === 200) { notice('Foto de perfil actualizada.'); renderPerfil(); }
+    else notice(rr.data.error || 'No se pudo guardar la foto de perfil.');
+  });
+  const coverChangeBtn = $('#profile-cover-change');
+  if (coverChangeBtn) coverChangeBtn.addEventListener('click', () => $('#profile-cover-file').click());
+  const coverFile = $('#profile-cover-file');
+  if (coverFile) coverFile.addEventListener('change', async (e) => {
+    const m = await pickMedia(e.target.files[0]);
+    if (!m || m.kind !== 'image') { notice(m ? 'La foto de portada debe ser JPG/PNG.' : (lastPickError || 'No se pudo usar esa foto.')); e.target.value = ''; return; }
+    const rr = await api('/api/users/me/profile', { method: 'PATCH', body: JSON.stringify({ cover: { mime: m.mime, data: m.data } }) });
+    if (rr.status === 200) { notice('Foto de portada actualizada.'); renderPerfil(); }
+    else notice(rr.data.error || 'No se pudo guardar la foto de portada.');
+  });
   const followBtn = $('#profile-follow');
   if (followBtn) followBtn.addEventListener('click', async () => {
     if (!requireLogin('seguir')) return;
@@ -1419,7 +1548,7 @@ function verificationSection(p, isOwn) {
     const canAsk = (p.followers_count || 0) >= 500 || (p.following_count || 0) >= 500;
     if (!canAsk) return `<h3>Verificación</h3><p class="muted">Para pedir la verificación necesitas tener 500 o más amigos o 500 o más seguidores. Ahora tienes ${p.followers_count || 0} seguidores y ${p.following_count || 0} seguidos.</p>`;
     return `<h3>Verificación</h3><p class="muted">Ya tienes 500 o más amigos o seguidores: puedes pedir la verificación con tu nombre real y una foto de tu documento. El dueño la revisa y la aprueba. Tu nombre real y tu documento nunca se muestran en público.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="verif-name" placeholder="Nombre real" maxlength="120" style="flex:1;min-width:180px"><label class="action-btn" for="verif-doc">📄 Foto del documento</label><input id="verif-doc" type="file" accept="image/png,image/jpeg" hidden><button type="button" class="cta" id="verif-send">Pedir verificación</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="verif-name" placeholder="Nombre real" maxlength="120" style="flex:1;min-width:180px"><label class="action-btn" for="verif-doc">${ico('doc')} Foto del documento</label><input id="verif-doc" type="file" accept="image/png,image/jpeg" hidden><button type="button" class="cta" id="verif-send">Pedir verificación</button></div>
       <p class="muted small" id="verif-doc-name"></p><div id="verif-status"></div>`;
   }
   return p.verified ? '<h3>✓ Verificado</h3><p class="muted">Este perfil está verificado.</p>' : '';
@@ -1528,16 +1657,72 @@ function openEditProfileModal() {
     <label class="muted small">Biografía (máx. 300 caracteres)</label>
     <textarea id="edit-bio" rows="3" maxlength="300">${esc(p.bio || '')}</textarea>
     <div class="composer-actions">
-      <label class="action-btn" for="edit-avatar">🖼️ Foto de perfil</label>
-      <input id="edit-avatar" type="file" accept="image/png,image/jpeg" hidden>
-      <label class="action-btn" for="edit-cover">🌄 Foto de portada</label>
-      <input id="edit-cover" type="file" accept="image/png,image/jpeg" hidden>
+      <label class="action-btn" for="edit-avatar">${ico('image')} Foto de perfil</label>
+      <input id="edit-avatar" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>
+      <label class="action-btn" for="edit-cover">${ico('image')} Foto de portada</label>
+      <input id="edit-cover" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>
     </div>
-    <p class="muted small">JPG o PNG, hasta 5 MB. Las fotos se guardan y no se borran.</p>
+    <div id="edit-avatar-preview" class="photo-preview" hidden></div>
+    <div id="edit-cover-preview" class="photo-preview" hidden></div>
+    <p class="form-error" id="edit-photo-error" hidden></p>
+    <p class="muted small">JPG o PNG (o HEIC de iPhone, que se convierte sola), hasta 5 MB. Las fotos se guardan y no se borran.</p>
     <button type="button" class="cta" id="edit-save" style="margin-top:10px">Guardar cambios</button>`);
-  $('#edit-avatar').addEventListener('change', async (e) => { const m = await pickMedia(e.target.files[0]); if (m && m.kind === 'image') { avatar = m; notice('Foto de perfil elegida.'); } else if (m) notice('La foto de perfil debe ser JPG/PNG.'); });
-  $('#edit-cover').addEventListener('change', async (e) => { const m = await pickMedia(e.target.files[0]); if (m && m.kind === 'image') { cover = m; notice('Foto de portada elegida.'); } else if (m) notice('La foto de portada debe ser JPG/PNG.'); });
+  // Vista previa en vivo y bloqueo del descarte silencioso: si
+  // la foto elegida no se pudo usar (HEIC que no se convierte,
+  // más de 5 MB que no se achica…), el error queda dentro del
+  // modal y el guardado se bloquea hasta que se elija una foto
+  // válida o se descarten las que fallaron.
+  let avatarFailed = false;
+  let coverFailed = false;
+  function showPhotoError(msg) {
+    const err = $('#edit-photo-error');
+    if (!err) return;
+    err.innerHTML = `<span>${esc(msg)}</span> <button type="button" class="link-btn" id="edit-photo-dismiss">Descartar</button>`;
+    err.hidden = false;
+    $('#edit-photo-dismiss').addEventListener('click', () => {
+      avatarFailed = false; coverFailed = false;
+      err.hidden = true; err.innerHTML = '';
+    });
+  }
+  function clearPhotoError() {
+    const err = $('#edit-photo-error');
+    if (err) { err.hidden = true; err.innerHTML = ''; }
+  }
+  $('#edit-avatar').addEventListener('change', async (e) => {
+    const m = await pickMedia(e.target.files[0]);
+    const prev = $('#edit-avatar-preview');
+    if (m && m.kind === 'image') {
+      avatar = m; avatarFailed = false; clearPhotoError();
+      prev.hidden = false;
+      prev.innerHTML = `<img src="data:${esc(m.mime)};base64,${m.data}" alt="Foto de perfil elegida"><button type="button" class="ghost-btn" id="edit-avatar-remove">Quitar</button>`;
+      $('#edit-avatar-remove').addEventListener('click', () => { avatar = null; avatarFailed = false; prev.hidden = true; prev.innerHTML = ''; $('#edit-avatar').value = ''; clearPhotoError(); });
+    } else {
+      avatar = null; avatarFailed = true;
+      prev.hidden = true; prev.innerHTML = '';
+      showPhotoError(m ? 'La foto de perfil debe ser JPG/PNG.' : `Esa foto de perfil no se pudo usar: ${lastPickError || 'formato no aceptado.'}`);
+      e.target.value = '';
+    }
+  });
+  $('#edit-cover').addEventListener('change', async (e) => {
+    const m = await pickMedia(e.target.files[0]);
+    const prev = $('#edit-cover-preview');
+    if (m && m.kind === 'image') {
+      cover = m; coverFailed = false; clearPhotoError();
+      prev.hidden = false;
+      prev.innerHTML = `<img src="data:${esc(m.mime)};base64,${m.data}" alt="Foto de portada elegida"><button type="button" class="ghost-btn" id="edit-cover-remove">Quitar</button>`;
+      $('#edit-cover-remove').addEventListener('click', () => { cover = null; coverFailed = false; prev.hidden = true; prev.innerHTML = ''; $('#edit-cover').value = ''; clearPhotoError(); });
+    } else {
+      cover = null; coverFailed = true;
+      prev.hidden = true; prev.innerHTML = '';
+      showPhotoError(m ? 'La foto de portada debe ser JPG/PNG.' : `Esa foto de portada no se pudo usar: ${lastPickError || 'formato no aceptado.'}`);
+      e.target.value = '';
+    }
+  });
   $('#edit-save').addEventListener('click', async () => {
+    if (avatarFailed || coverFailed) {
+      showPhotoError('Hay una foto que no se pudo usar: elige una foto JPG/PNG válida o toca «Descartar» para guardar sin ella.');
+      return;
+    }
     const body = { bio: ($('#edit-bio').value || '').trim() };
     if (!nameLocked) {
       const name = ($('#edit-name').value || '').trim();
@@ -1585,7 +1770,7 @@ async function renderIA() {
     const box = $('#ai-chat');
     box.innerHTML += `<div class="chat-msg mine"><div>${linkify(q)}</div></div>`;
     const r = await api('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question: q }) });
-    box.innerHTML += `<div class="chat-msg"><div>👻 ${r.status === 200 ? linkify(r.data.answer) : 'La asistente no pudo responder. Inténtalo de nuevo.'}</div></div>`;
+    box.innerHTML += `<div class="chat-msg"><div>${ico('ghost')} ${r.status === 200 ? linkify(r.data.answer) : 'La asistente no pudo responder. Inténtalo de nuevo.'}</div></div>`;
     box.scrollTop = box.scrollHeight;
   });
   const recs = await api('/api/ai/recommendations');
@@ -1607,7 +1792,7 @@ async function renderNotifPanel() {
   if (r.status !== 200) { list.innerHTML = '<p class="muted" style="padding:12px">No se pudieron cargar.</p>'; return; }
   const items = r.data.notifications || [];
   list.innerHTML = items.length
-    ? items.map((n) => `<div class="notif-item${n.unread ? ' unread' : ''}" data-notif-alias="${esc(n.actor_alias || '')}"><span style="font-size:18px">${n.kind === 'like' ? '👍' : n.kind === 'comment' ? '💬' : '👥'}</span><span><strong>${esc(n.actor_alias || '')}</strong> ${esc(n.text || '')}<br><span class="muted small">${timeAgo(n.created_at)}</span></span></div>`).join('')
+    ? items.map((n) => `<div class="notif-item${n.unread ? ' unread' : ''}" data-notif-alias="${esc(n.actor_alias || '')}"><span class="notif-ico">${n.kind === 'like' ? ico('thumb') : n.kind === 'comment' ? ico('comment') : ico('users')}</span><span><strong>${esc(n.actor_alias || '')}</strong> ${esc(n.text || '')}<br><span class="muted small">${timeAgo(n.created_at)}</span></span></div>`).join('')
     : '<p class="muted" style="padding:12px">Sin notificaciones todavía.</p>';
   $$('#notif-list [data-notif-alias]').forEach((b) => b.addEventListener('click', () => { $('#notif-panel').hidden = true; openProfile(b.dataset.notifAlias); }));
   if (r.data.unread > 0) {
@@ -1618,12 +1803,12 @@ async function renderNotifPanel() {
 
 async function renderNotificaciones() {
   const el = $('#view-notificaciones');
-  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">🔔 Notificaciones</h2><div id="notif-full"><p class="muted">Cargando…</p></div></div>`;
+  el.innerHTML = `<div class="card"><h2 style="margin:0 0 10px">${ico('bell')} Notificaciones</h2><div id="notif-full"><p class="muted">Cargando…</p></div></div>`;
   if (!me) { $('#notif-full').innerHTML = '<p class="muted">Entra para ver tus notificaciones.</p>'; return; }
   const r = await api('/api/social/notifications');
   const items = r.status === 200 ? (r.data.notifications || []) : [];
   $('#notif-full').innerHTML = items.length
-    ? items.map((n) => `<div class="notif-item${n.unread ? ' unread' : ''}" data-notif-alias="${esc(n.actor_alias || '')}"><span style="font-size:18px">${n.kind === 'like' ? '👍' : n.kind === 'comment' ? '💬' : '👥'}</span><span><strong>${esc(n.actor_alias || '')}</strong> ${esc(n.text || '')}<br><span class="muted small">${timeAgo(n.created_at)}</span></span></div>`).join('')
+    ? items.map((n) => `<div class="notif-item${n.unread ? ' unread' : ''}" data-notif-alias="${esc(n.actor_alias || '')}"><span class="notif-ico">${n.kind === 'like' ? ico('thumb') : n.kind === 'comment' ? ico('comment') : ico('users')}</span><span><strong>${esc(n.actor_alias || '')}</strong> ${esc(n.text || '')}<br><span class="muted small">${timeAgo(n.created_at)}</span></span></div>`).join('')
     : '<p class="muted">Sin notificaciones todavía.</p>';
   $$('#notif-full [data-notif-alias]').forEach((b) => b.addEventListener('click', () => openProfile(b.dataset.notifAlias)));
   if (r.data.unread > 0) {

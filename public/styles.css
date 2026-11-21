@@ -53,6 +53,28 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
    quedaba siempre visible tapando toda la página sin dejar hacer nada. */
 [hidden] { display: none !important; }
 
+/* ---------- Iconos SVG de la interfaz ---------- */
+.ico-svg { width: 20px; height: 20px; flex-shrink: 0; vertical-align: -4px; }
+.menu-chip .ico-svg { width: 22px; height: 22px; vertical-align: 0; }
+.icon-btn .ico-svg { width: 22px; height: 22px; vertical-align: 0; }
+.bottom-btn .b-ico .ico-svg { width: 22px; height: 22px; vertical-align: 0; }
+.b-plus .ico-svg { width: 26px; height: 26px; vertical-align: 0; }
+.action-btn .ico-svg { width: 18px; height: 18px; margin-right: 2px; }
+.post-counts .ico-svg { width: 15px; height: 15px; vertical-align: -2px; }
+.post-counts .link-btn .ico-svg { margin-right: 1px; }
+.side-head h3 .ico-svg { width: 16px; height: 16px; vertical-align: -2px; }
+h2 .ico-svg, h3 .ico-svg { width: 20px; height: 20px; }
+.notif-ico { display: inline-flex; align-items: center; flex-shrink: 0; }
+.notif-ico .ico-svg { width: 19px; height: 19px; vertical-align: 0; }
+.group-ico .ico-svg { width: 26px; height: 26px; vertical-align: 0; }
+.share-menu button .ico-svg { width: 18px; height: 18px; vertical-align: -3px; }
+.reel-meta .ico-svg { width: 13px; height: 13px; vertical-align: -2px; }
+.reel-play .ico-svg { width: 15px; height: 15px; vertical-align: 0; }
+.story-video-ring { display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.story-video-ring .ico-svg { width: 26px; height: 26px; vertical-align: 0; }
+.disabled-badge .ico-svg, .profile-actions .ico-svg { width: 15px; height: 15px; vertical-align: -2px; }
+.profile-stats .ico-svg { width: 15px; height: 15px; vertical-align: -2px; }
+
 /* ---------- Barra superior ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 40;
@@ -84,6 +106,9 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .search-results button { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 10px 12px; text-align: left; }
 .search-results button:hover { background: var(--surface-2); }
 .top-icons { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+/* El botón de búsqueda solo existe en el teléfono: en PC el
+   buscador está siempre visible. */
+#top-search-toggle { display: none; }
 .icon-btn {
   position: relative; width: 42px; height: 42px; border-radius: 50%;
   border: 0; background: transparent; font-size: 20px;
@@ -128,8 +153,6 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .side-block h3 { margin: 0 0 10px; font-size: 15px; }
 .side-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .side-head h3 { margin: 0; }
-.premium-card { background: linear-gradient(160deg, #1d1d3d, #12122b); border: 1px solid #4c3a86; border-radius: 14px; padding: 16px; margin-top: 16px; }
-.premium-title { font-weight: 800; margin: 0 0 4px; }
 .cta {
   background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 48%, #2563eb 115%);
   color: #fff; border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 700;
@@ -226,6 +249,15 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .reaction-pop { display: flex; gap: 6px; padding: 8px 2px; }
 .reaction-pop button { font-size: 22px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; width: 44px; height: 44px; }
 .reaction-pop button.active { border-color: var(--accent); box-shadow: 0 0 10px rgba(139, 92, 246, 0.5); }
+/* Botones de reacción con gradiente: Me gusta azul, Me encanta
+   rojo/rosa, Me asombra ámbar. La cara es un SVG blanco. */
+.reaction-pop .react-btn { color: #fff; border: 0; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.reaction-pop .react-btn .ico-svg { width: 24px; height: 24px; vertical-align: 0; }
+.reaction-pop .react-btn:hover { transform: scale(1.15); }
+.react-like { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+.react-love { background: linear-gradient(135deg, #f43f5e, #db2777); }
+.react-wow { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.reaction-pop .react-btn.active { box-shadow: 0 0 0 2px #fff, 0 0 14px rgba(139, 92, 246, 0.7); }
 .comment { display: flex; gap: 8px; margin-top: 10px; }
 .comment-body { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; flex: 1; }
 .comment-body .post-author { font-size: 13px; }
@@ -277,7 +309,28 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .disabled-badge { font-size: 12px; font-weight: 800; color: #f87171; margin-left: 6px; }
 
 /* ---------- Perfil ---------- */
-.profile-cover { height: 200px; border-radius: 14px 14px 0 0; background: linear-gradient(135deg, #312e81, #6d28d9 55%, #0ea5e9); background-size: cover; background-position: center; }
+.form-error { color: #ff6b81; font-weight: 700; font-size: 14px; margin: 10px 0 0; }
+.form-error .link-btn { font-size: 13px; }
+.profile-cover { height: 200px; border-radius: 14px 14px 0 0; background: linear-gradient(135deg, #312e81, #6d28d9 55%, #0ea5e9); background-size: cover; background-position: center; position: relative; }
+/* Botón circular de cámara sobre el avatar y botón de portada:
+   cambiar la foto sin pasar por «Editar perfil». */
+.profile-avatar-wrap { position: relative; display: inline-block; flex-shrink: 0; }
+.avatar-cam-btn {
+  position: absolute; right: 2px; bottom: 2px; z-index: 2;
+  width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--surface);
+  background: linear-gradient(135deg, #7c3aed, #2563eb); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.avatar-cam-btn .ico-svg { width: 18px; height: 18px; vertical-align: 0; }
+.cover-change-btn {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  background: rgba(7, 7, 22, 0.65); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px; padding: 8px 12px; font-size: 13px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+  backdrop-filter: blur(4px);
+}
+.cover-change-btn .ico-svg { width: 16px; height: 16px; }
 .profile-head { display: flex; gap: 16px; align-items: flex-end; padding: 0 16px; margin-top: -48px; flex-wrap: wrap; }
 .profile-head .avatar, .profile-head .avatar-fallback { width: 120px; height: 120px; border: 4px solid var(--surface); font-size: 44px; }
 .profile-name { font-size: 24px; font-weight: 800; margin: 0; }
@@ -289,6 +342,14 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .info-grid dd { margin: 0; }
 
 /* ---------- Mensajes ---------- */
+/* Selector de «Nuevo mensaje»: filas propias (no reutiliza la
+   fila de conversación), con botón Mensaje a la derecha y lista
+   con su propio scroll. */
+.newmsg-results { max-height: 50vh; overflow-y: auto; }
+.newmsg-row { display: flex; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+.newmsg-row:last-child { border-bottom: 0; }
+.newmsg-row .newmsg-btn { flex-shrink: 0; padding: 8px 12px; font-size: 14px; }
+.newmsg-row .newmsg-btn .ico-svg { width: 16px; height: 16px; }
 .thread-row { display: flex; gap: 10px; align-items: center; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 12px 6px; text-align: left; }
 .thread-row:hover { background: var(--surface-2); }
 .thread-row .thread-last { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
@@ -351,6 +412,18 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 .doc-thumb { max-width: 220px; border-radius: 10px; display: block; margin-top: 8px; }
 
 /* ---------- Barra inferior móvil ---------- */
+.ia-fab {
+  display: none; position: fixed; right: 16px; bottom: 84px; z-index: 45;
+  width: 56px; height: 56px; border-radius: 50%; border: 0; color: #fff;
+  background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 48%, #2563eb 115%);
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.65), 0 4px 12px rgba(0, 0, 0, 0.5);
+  align-items: center; justify-content: center;
+}
+.ia-fab .ico-svg { width: 30px; height: 30px; vertical-align: 0; }
+.ia-fab.active { box-shadow: 0 0 0 3px #fff, 0 0 18px rgba(139, 92, 246, 0.8); }
+@media (max-width: 860px) {
+  .ia-fab { display: inline-flex; }
+}
 .bottomnav {
   display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
   background: rgba(7, 7, 22, 0.95); border-top: 1px solid var(--border);
@@ -374,13 +447,44 @@ label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
 }
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding: 12px 12px 84px; }
-  .sidebar { display: none; }
+  /* El menú lateral no desaparece en el teléfono: se vuelve una
+     fila de chips con scroll horizontal sobre el contenido, para
+     que Grupos, Amigos, Reels, IA y Notificaciones sigan al
+     alcance. Solo se ocultan los accesos directos. */
+  .sidebar { display: block; position: static; }
+  .sidebar .side-block { display: none; }
+  .pc-menu { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .pc-menu::-webkit-scrollbar { display: none; }
+  .menu-btn { width: auto; white-space: nowrap; flex-shrink: 0; }
   .bottomnav { display: flex; }
   .brand-tag { display: none; }
+  /* Topbar del teléfono: solo marca + búsqueda + avatar. Los
+     demás iconos están duplicados en el bottomnav o en los chips. */
+  .top-icons .icon-btn:not(#top-avatar):not(#top-search-toggle) { display: none; }
+  #top-search-toggle { display: inline-flex; }
   .top-search { display: none; }
+  .topbar.search-open .top-search { display: block; position: absolute; top: calc(100% + 8px); left: 12px; right: 12px; max-width: none; margin: 0; z-index: 55; }
   .brand-name { font-size: 19px; }
   .info-grid { grid-template-columns: 1fr; }
   .banner-title { font-size: 24px; }
+  /* En el teléfono el modal es una hoja inferior: anclada abajo
+     (con hueco para el bottomnav), bordes redondeados y altura
+     máxima 85vh. */
+  .modal { align-items: flex-end; padding: 0 0 84px; }
+  .modal-card { max-height: 85vh; overflow-y: auto; }
+}
+/* Teléfonos pequeños (360-480px): misma estructura, solo más
+   compacta. */
+@media (max-width: 480px) {
+  .topbar { padding: 8px 10px; }
+  .brand-name { font-size: 17px; }
+  .ghost-badge { width: 36px; height: 36px; }
+  .ghost-svg { width: 26px; height: 26px; }
+  .card { padding: 12px; }
+  .banner-title { font-size: 20px; }
+  .profile-head { margin-top: -38px; }
+  .profile-head .avatar, .profile-head .avatar-fallback { width: 76px; height: 76px; font-size: 32px; }
+  .profile-name { font-size: 20px; }
 }
 @media (min-width: 861px) {
   .brand-tag { display: inline; }

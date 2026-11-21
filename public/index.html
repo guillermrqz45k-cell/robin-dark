@@ -26,11 +26,12 @@
     <div id="top-search-results" class="search-results" hidden></div>
   </div>
   <nav class="top-icons" aria-label="Accesos rápidos">
-    <button id="top-home" class="icon-btn" aria-label="Inicio" title="Inicio">⌂</button>
-    <button id="top-friends" class="icon-btn" aria-label="Amigos" title="Amigos">👥</button>
-    <button id="top-messages" class="icon-btn" aria-label="Mensajes" title="Mensajes">✉️<span id="chat-badge" class="badge" hidden></span></button>
-    <button id="top-bell" class="icon-btn" aria-label="Notificaciones" title="Notificaciones">🔔<span id="notif-badge" class="badge" hidden></span></button>
-    <button id="top-avatar" class="icon-btn avatar-btn" aria-label="Mi perfil" title="Mi perfil"><span id="top-avatar-img">👤</span></button>
+    <button id="top-search-toggle" class="icon-btn" aria-label="Buscar" title="Buscar"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></button>
+    <button id="top-home" class="icon-btn" aria-label="Inicio" title="Inicio"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></button>
+    <button id="top-friends" class="icon-btn" aria-label="Amigos" title="Amigos"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/><path d="M16 4.6a3 3 0 0 1 0 5.9"/><path d="M16.5 15.3c2.4.5 4.2 2 5 4.7"/></svg></button>
+    <button id="top-messages" class="icon-btn" aria-label="Mensajes" title="Mensajes"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span id="chat-badge" class="badge" hidden></span></button>
+    <button id="top-bell" class="icon-btn" aria-label="Notificaciones" title="Notificaciones"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 9a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 15 18 9"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/></svg><span id="notif-badge" class="badge" hidden></span></button>
+    <button id="top-avatar" class="icon-btn avatar-btn" aria-label="Mi perfil" title="Mi perfil"><span id="top-avatar-img"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg></span></button>
   </nav>
   <div id="notif-panel" class="notif-panel" hidden>
     <div class="notif-head"><strong>Notificaciones</strong><button id="notif-close" class="link-btn" aria-label="Cerrar notificaciones">✕</button></div>
@@ -45,11 +46,6 @@
     <div class="side-block">
       <h3>Tus accesos directos</h3>
       <div id="my-groups-shortcuts"><p class="muted small">Entra para ver tus grupos.</p></div>
-    </div>
-    <div class="premium-card">
-      <p class="premium-title">👑 Robin Dark Premium</p>
-      <p class="muted small">Más beneficios, más conexión.</p>
-      <button id="premium-btn" class="cta">Ver planes</button>
     </div>
   </aside>
 
@@ -78,7 +74,7 @@
       <div id="suggested-groups"><p class="muted small">Cargando…</p></div>
     </div>
     <div class="side-block">
-      <div class="side-head"><h3>🔥 Tendencias</h3><button class="link-btn" id="trends-all">Ver todas</button></div>
+      <div class="side-head"><h3><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2c1 3-2 4.5-2 7 0 1.5 1 2.5 2 2.5S14 10.5 14 9c2 1.5 3 3.5 3 5.5A5 5 0 0 1 7 14.5C7 9 10 6 12 2z"/></svg> Tendencias</h3><button class="link-btn" id="trends-all">Ver todas</button></div>
       <div id="trending-tags"><p class="muted small">Cargando…</p></div>
     </div>
     <div class="side-block">
@@ -100,12 +96,14 @@
 </footer>
 
 <nav class="bottomnav" aria-label="Navegación principal en el teléfono">
-  <button data-view="inicio" class="bottom-btn" aria-label="Inicio"><span class="b-ico">⌂</span><span>Inicio</span></button>
-  <button data-view="explorar" class="bottom-btn" aria-label="Explorar"><span class="b-ico">🧭</span><span>Explorar</span></button>
-  <button id="bottom-create" class="bottom-btn bottom-plus" aria-label="Crear publicación u historia"><span class="b-plus">+</span></button>
-  <button data-view="mensajes" class="bottom-btn" aria-label="Mensajes"><span class="b-ico">✉️</span><span>Mensajes</span><span id="chat-badge-mobile" class="badge" hidden></span></button>
-  <button data-view="perfil" class="bottom-btn" aria-label="Perfil"><span class="b-ico">👤</span><span>Perfil</span></button>
+  <button data-view="inicio" class="bottom-btn" aria-label="Inicio"><span class="b-ico"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg></span><span>Inicio</span></button>
+  <button data-view="explorar" class="bottom-btn" aria-label="Explorar"><span class="b-ico"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span><span>Explorar</span></button>
+  <button id="bottom-create" class="bottom-btn bottom-plus" aria-label="Crear publicación u historia"><span class="b-plus"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+  <button data-view="mensajes" class="bottom-btn" aria-label="Mensajes"><span class="b-ico"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span><span>Mensajes</span><span id="chat-badge-mobile" class="badge" hidden></span></button>
+  <button data-view="perfil" class="bottom-btn" aria-label="Perfil"><span class="b-ico"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg></span><span>Perfil</span></button>
 </nav>
+
+<button id="ia-fab" class="ia-fab" data-view="ia" aria-label="Asistente IA" title="Asistente IA"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a7 7 0 0 0-7 7v10l2.3-1.7 2.4 1.7 2.3-1.7 2.3 1.7 2.4-1.7L19 20V10a7 7 0 0 0-7-7z"/><circle cx="9.5" cy="10" r="1.3" fill="currentColor" stroke="none"/><circle cx="14.5" cy="10" r="1.3" fill="currentColor" stroke="none"/></svg></button>
 
 <div id="modal" class="modal" hidden><div id="modal-card" class="modal-card"></div></div>
 </div>
