@@ -124,19 +124,36 @@ router.get('/', requireAuth, async (req, res) => {
     let rows;
     if (q) {
       rows = (await db.query(
-        `SELECT id, alias, verified, avatar_photo_id, rank, disabled FROM users
-         WHERE id <> $1 AND LOWER(alias) LIKE LOWER($2)${isAdmin ? '' : ' AND disabled = FALSE'} ORDER BY alias ASC LIMIT $3`,
+        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank, u.disabled,
+                (SELECT COUNT(*) FROM follows f WHERE f.followed_id = u.id) AS followers_count
+         FROM users u
+         WHERE u.id <> $1 AND LOWER(u.alias) LIKE LOWER($2)${isAdmin ? '' : ' AND u.disabled = FALSE'} ORDER BY u.alias ASC LIMIT $3`,
         [req.user.id, `%${q}%`, limit],
       )).rows;
     } else {
       rows = (await db.query(
-        `SELECT id, alias, verified, avatar_photo_id, rank, disabled FROM users
-         WHERE id <> $1${isAdmin ? '' : ' AND disabled = FALSE'} ORDER BY created_at DESC, id DESC LIMIT $2`,
+        `SELECT u.id, u.alias, u.verified, u.avatar_photo_id, u.rank, u.disabled,
+                (SELECT COUNT(*) FROM follows f WHERE f.followed_id = u.id) AS followers_count
+         FROM users u
+         WHERE u.id <> $1${isAdmin ? '' : ' AND u.disabled = FALSE'} ORDER BY u.created_at DESC, u.id DESC LIMIT $2`,
         [req.user.id, limit],
       )).rows;
     }
     const photoUrls = await photos.urlsByIds(collectAvatarIds(rows));
-    return res.json({ users: rows.map((u) => authorCard(u, photoUrls)) });
+    const users = [];
+    for (const u of rows) {
+      const mutual = await db.get(
+        `SELECT COUNT(*) AS n FROM follows f1 JOIN follows f2 ON f1.followed_id = f2.followed_id
+         WHERE f1.follower_id = $1 AND f2.follower_id = $2`,
+        [req.user.id, u.id],
+      );
+      users.push({
+        ...authorCard(u, photoUrls),
+        followers_count: Number(u.followers_count),
+        mutual_follows: Number(mutual.n),
+      });
+    }
+    return res.json({ users });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'No se pudieron buscar miembros.' });
