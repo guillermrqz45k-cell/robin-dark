@@ -1394,9 +1394,15 @@ async function renderPerfil() {
   const p = r.data;
   profileData = p;
   const isOwn = me && me.alias === p.alias;
-  const coverStyle = p.cover_url ? `background-image:url('${esc(p.cover_url)}')` : '';
+  // La portada se pinta con <img> en vez de background-image: el
+  // fondo degradado del CSS (background: linear-gradient) ganaba
+  // en algunos teléfonos y la foto no se veía aunque cover_url
+  // estuviera guardada (la foto sí subía: se veía en la
+  // publicación «actualizó su foto de portada»). Con <img> la foto
+  // siempre se muestra y el degradado queda detrás por si falla.
+  const coverImg = p.cover_url ? `<img class="profile-cover-img" src="${esc(p.cover_url)}" alt="Foto de portada de @${esc(p.alias)}">` : '';
   el.innerHTML = `<div class="card${p.seniority === 'antiguo' ? ' profile-antiguo' : ''}" style="padding:0;overflow:hidden">
-    <div class="profile-cover" style="${coverStyle}">${isOwn ? `<button type="button" class="cover-change-btn" id="profile-cover-change">${ico('camera')} Cambiar portada</button><input id="profile-cover-file" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>` : ''}</div>
+    <div class="profile-cover">${coverImg}${isOwn ? `<button type="button" class="cover-change-btn" id="profile-cover-change">${ico('camera')} Cambiar portada</button><input id="profile-cover-file" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>` : ''}</div>
     <div style="padding:0 16px 16px">
       <div class="profile-head">
         <span class="profile-avatar-wrap">${avatarHtml({ alias: p.alias, avatar_url: p.avatar_url }, 'lg')}${isOwn ? `<button type="button" class="avatar-cam-btn" id="profile-avatar-change" aria-label="Cambiar foto de perfil">${ico('camera')}</button><input id="profile-avatar-file" type="file" accept="image/png,image/jpeg,image/heic,image/heif" hidden>` : ''}</span>
