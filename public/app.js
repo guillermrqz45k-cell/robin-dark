@@ -182,10 +182,19 @@ function fileToBase64(file) {
 // salga girada; si no está disponible, usa un Image normal.
 async function downscaleImage(file, maxSide = 1600) {
   let source = null;
+  // createImageBitmap existe en la mayoría de navegadores, pero en
+  // algunos teléfonos (WebView viejos, ciertos Android) existe y
+  // falla al leer el archivo: si falla, se cae al método con
+  // <img> en vez de devolver null y perder la foto.
   try {
     if (typeof createImageBitmap === 'function') {
-      source = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    } else {
+      try {
+        source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch (e) {
+        source = null;
+      }
+    }
+    if (!source) {
       const url = URL.createObjectURL(file);
       try {
         source = await new Promise((resolve, reject) => {
